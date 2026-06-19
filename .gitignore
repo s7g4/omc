@@ -1,0 +1,19 @@
+# --- Rust/Cargo ---
+/target
+Cargo.lock
+
+# --- Next.js / Node ---
+node_modules/
+.next/
+out/
+.env*.local
+
+# --- IDEs and OS ---
+.idea/
+.vscode/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
