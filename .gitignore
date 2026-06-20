@@ -6,6 +6,7 @@ node_modules/
 .next/
 out/
 .env*.local
+.env
 
 # --- IDEs and OS ---
 .idea/
