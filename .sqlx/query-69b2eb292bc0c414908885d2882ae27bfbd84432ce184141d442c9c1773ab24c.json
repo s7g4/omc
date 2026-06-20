@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO telemetry (satellite_id, battery_level, battery_temp, solar_power, velocity, altitude, latitude, longitude)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING id, satellite_id, battery_level, battery_temp, solar_power, velocity, altitude, latitude, longitude, created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "satellite_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "battery_level",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "battery_temp",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "solar_power",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "velocity",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "altitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Float8",
+        "Float8",
+        "Float8",
+        "Float8",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "69b2eb292bc0c414908885d2882ae27bfbd84432ce184141d442c9c1773ab24c"
+}

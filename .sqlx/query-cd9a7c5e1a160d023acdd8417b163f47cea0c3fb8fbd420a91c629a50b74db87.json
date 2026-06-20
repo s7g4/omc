@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, satellite_id, battery_level, battery_temp, solar_power, velocity, altitude, latitude, longitude, created_at\n            FROM telemetry\n            WHERE satellite_id = $1\n            ORDER BY created_at DESC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "satellite_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "battery_level",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "battery_temp",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "solar_power",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "velocity",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "altitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cd9a7c5e1a160d023acdd8417b163f47cea0c3fb8fbd420a91c629a50b74db87"
+}
