@@ -1,5 +1,6 @@
 # --- Rust/Cargo ---
 /target
+simulator_config.json
 
 # --- Next.js / Node ---
 node_modules/
