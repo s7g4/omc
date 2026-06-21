@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO satellites (id, name, status)\n        VALUES ($1, $2, 'active')\n        ON CONFLICT (id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "feb45ac22d967d183fb5be5f199ed43877b91c38a7de3f565d4ca6a742117386"
+}

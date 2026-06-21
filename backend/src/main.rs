@@ -1,4 +1,7 @@
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -24,6 +27,10 @@ async fn main() {
     // Build router with shared state (the connection pool)
     let app = Router::new()
         .route("/health", get(health_check))
+        .route(
+            "/api/v1/telemetry",
+            post(telemetry::handlers::ingest_telemetry),
+        )
         .with_state(pool);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8081));
