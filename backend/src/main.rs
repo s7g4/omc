@@ -8,6 +8,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod db;
 mod telemetry;
 mod websockets;
+mod auth;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -48,6 +49,8 @@ async fn main() {
             post(telemetry::handlers::ingest_telemetry),
         )
         .route("/api/v1/telemetry/ws", get(websockets::handler::ws_handler))
+        .route("/api/v1/auth/register", post(auth::handlers::register_user))
+        .route("/api/v1/auth/login", post(auth::handlers::login_user))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8081));
