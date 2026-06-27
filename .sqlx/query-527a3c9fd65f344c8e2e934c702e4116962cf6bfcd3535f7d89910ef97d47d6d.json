@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE satellites SET mission_id = NULL WHERE id = $1 AND mission_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "527a3c9fd65f344c8e2e934c702e4116962cf6bfcd3535f7d89910ef97d47d6d"
+}
