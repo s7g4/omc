@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct User {
@@ -32,5 +32,5 @@ pub struct AuthResponse {
 pub struct Claims {
     pub sub: String, // User ID (UUID)
     pub username: String,
-    pub exp: usize,  // Expiration timestamp
+    pub exp: usize, // Expiration timestamp
 }

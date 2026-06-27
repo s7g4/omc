@@ -30,7 +30,10 @@ export default function LiveCharts({ history }: LiveChartsProps) {
   const [activeChartTab, setActiveChartTab] = useState<"altitude" | "velocity" | "power">("altitude");
 
   useEffect(() => {
-    setMounted(true);
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   if (!mounted) {
@@ -70,7 +73,7 @@ export default function LiveCharts({ history }: LiveChartsProps) {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveChartTab(tab.id as any)}
+              onClick={() => setActiveChartTab(tab.id as "altitude" | "velocity" | "power")}
               className={`px-3 py-1.5 rounded-md text-[11px] font-mono font-medium transition-all duration-200 ${
                 activeChartTab === tab.id
                   ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"

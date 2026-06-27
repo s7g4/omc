@@ -3,11 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Terminal, 
-  Trash2, 
-  Filter, 
-  CircleAlert, 
-  CircleCheck, 
-  Info 
+  Trash2 
 } from "lucide-react";
 
 export interface LogEvent {
@@ -90,16 +86,12 @@ export default function EventsLog({ events, clearEvents }: EventsLogProps) {
           filteredEvents.map((e) => {
             let typeColor = "text-emerald-400";
             let typeBg = "bg-emerald-500/10 border-emerald-500/20";
-            let Icon = Info;
-
             if (e.type === "warning") {
               typeColor = "text-amber-400";
               typeBg = "bg-amber-500/10 border-amber-500/20";
-              Icon = CircleAlert;
             } else if (e.type === "error") {
               typeColor = "text-rose-400";
               typeBg = "bg-rose-500/10 border-rose-500/20";
-              Icon = CircleCheck; // actually let's use CircleAlert or customized for error
             }
 
             return (

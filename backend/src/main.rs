@@ -5,10 +5,11 @@ use axum::{
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod auth;
 mod db;
+mod missions;
 mod telemetry;
 mod websockets;
-mod auth;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -51,6 +52,24 @@ async fn main() {
         .route("/api/v1/telemetry/ws", get(websockets::handler::ws_handler))
         .route("/api/v1/auth/register", post(auth::handlers::register_user))
         .route("/api/v1/auth/login", post(auth::handlers::login_user))
+        .route(
+            "/api/v1/missions",
+            get(missions::handlers::list_missions).post(missions::handlers::create_mission),
+        )
+        .route(
+            "/api/v1/missions/:id",
+            get(missions::handlers::get_mission)
+                .put(missions::handlers::update_mission)
+                .delete(missions::handlers::delete_mission),
+        )
+        .route(
+            "/api/v1/missions/:id/assign",
+            post(missions::handlers::assign_satellite),
+        )
+        .route(
+            "/api/v1/missions/:id/unassign",
+            post(missions::handlers::unassign_satellite),
+        )
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8081));

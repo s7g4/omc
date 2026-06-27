@@ -9,7 +9,7 @@ import EventsLog, { LogEvent } from "@/components/EventsLog";
 import SimControl from "@/components/SimControl";
 import MissionsOverview, { Mission } from "@/components/MissionsOverview";
 import AuthScreen from "@/components/AuthScreen";
-import { Database, ShieldAlert, Cpu, Network, HelpCircle, Terminal, Loader2 } from "lucide-react";
+import { Database, Cpu, Network, HelpCircle, Terminal, Loader2 } from "lucide-react";
 
 // Static definitions of Satellites
 const SATELLITES = [
@@ -17,6 +17,38 @@ const SATELLITES = [
   { id: "38b4eb99-1a76-4d05-992e-9d22ffce9328", name: "Hubble Space Telescope", status: "nominal" },
   { id: "a57e3f89-8d7b-4a5f-ba0a-7e3f982cfda5", name: "Sentinel-6 Earth Observer", status: "nominal" },
 ];
+
+interface TelemetryPayloadData {
+  time: string;
+  altitude: number;
+  velocity: number;
+  temp: number;
+  solar: number;
+  battery_level: number;
+  battery_temp: number;
+  solar_power: number;
+  latitude: number;
+  longitude: number;
+}
+
+interface BackendMission {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  start_date: string;
+}
+
+interface SimulatorPayload {
+  satellite_id: string;
+  battery_level: number;
+  battery_temp: number;
+  solar_power: number;
+  velocity: number;
+  altitude: number;
+  latitude: number;
+  longitude: number;
+}
 
 export default function Home() {
   // Session Authentication state
@@ -31,12 +63,12 @@ export default function Home() {
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
 
   // Live Telemetry States
-  const [telemetry, setTelemetry] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [telemetry, setTelemetry] = useState<TelemetryPayloadData | null>(null);
+  const [history, setHistory] = useState<TelemetryPayloadData[]>([]);
   const [events, setEvents] = useState<LogEvent[]>([]);
 
   // Simulation State
-  const [isSimulating, setIsSimulating] = useState(true);
+  const [isSimulating] = useState(true);
   const [activeFault, setActiveFault] = useState<string | null>(null);
 
   // Missions State
@@ -60,7 +92,7 @@ export default function Home() {
   ]);
 
   // Refs for tracking physics parameters under mock mode
-  const physicsStateRef = useRef<any>({
+  const physicsStateRef = useRef({
     altitude: 418.5,
     velocity: 7.66,
     battery: 98.4,
@@ -70,16 +102,34 @@ export default function Home() {
     lon: -0.12,
   });
 
+  // Add Event Helper (declared using hoisted function syntax)
+  function addEvent(type: LogEvent["type"], subsystem: string, message: string) {
+    const newEvent: LogEvent = {
+      id: Math.random().toString(36).substring(2, 11),
+      timestamp: new Date().toISOString().substring(11, 19),
+      type,
+      subsystem,
+      message,
+    };
+    setEvents((prev) => [...prev, newEvent]);
+  }
+
   // Verify session on mount
   useEffect(() => {
     const storedToken = localStorage.getItem("jwt_token");
     const storedUser = localStorage.getItem("operator_name");
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUsername(storedUser);
-      setIsAuthenticated(true);
-    }
-    setLoadingSession(false);
+    
+    // Defer state updates to avoid synchronous cascading renders warning
+    const timer = setTimeout(() => {
+      if (storedToken && storedUser) {
+        setToken(storedToken);
+        setUsername(storedUser);
+        setIsAuthenticated(true);
+      }
+      setLoadingSession(false);
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, []);
 
   const handleAuthSuccess = (newToken: string, newUsername: string) => {
@@ -105,7 +155,7 @@ export default function Home() {
     if (!isAuthenticated) return;
 
     let ws: WebSocket | null = null;
-    let reconnectTimeout: any = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const connectWS = () => {
       ws = new WebSocket("ws://localhost:8081/api/v1/telemetry/ws");
@@ -117,7 +167,7 @@ export default function Home() {
 
       ws.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data);
+          const payload = JSON.parse(event.data) as SimulatorPayload;
           // Only map if it matches current selected satellite
           if (payload.satellite_id === selectedSatellite) {
             const formattedTime = new Date().toLocaleTimeString();
@@ -128,6 +178,8 @@ export default function Home() {
               temp: payload.battery_temp,
               solar: payload.solar_power,
               battery_level: payload.battery_level,
+              battery_temp: payload.battery_temp,
+              solar_power: payload.solar_power,
               latitude: payload.latitude,
               longitude: payload.longitude,
             };
@@ -163,7 +215,7 @@ export default function Home() {
 
     return () => {
       if (ws) ws.close();
-      clearTimeout(reconnectTimeout);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, [selectedSatellite, isAuthenticated]);
 
@@ -230,6 +282,8 @@ export default function Home() {
         temp: state.temp,
         solar: state.solar,
         battery_level: state.battery,
+        battery_temp: state.temp,
+        solar_power: state.solar,
         latitude: state.lat,
         longitude: state.lon,
       };
@@ -242,17 +296,38 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [selectedSatellite, isWebSocketConnected, isSimulating, activeFault, isAuthenticated]);
 
-  // Add Event Helper
-  const addEvent = (type: LogEvent["type"], subsystem: string, message: string) => {
-    const newEvent: LogEvent = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString().substring(11, 19),
-      type,
-      subsystem,
-      message,
+  // Load missions from backend on authentication
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+
+    const fetchMissions = async () => {
+      try {
+        const response = await fetch("http://localhost:8081/api/v1/missions", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const list = await response.json();
+          const mapped = list.map((m: BackendMission) => ({
+            id: m.id,
+            name: m.name,
+            description: m.description || "",
+            status: m.status,
+            satellite_id: null,
+            start_date: m.start_date.split("T")[0],
+          }));
+          setMissions(mapped);
+          addEvent("info", "COMMAND", `Loaded ${mapped.length} mission profiles from database.`);
+        }
+      } catch (err) {
+        console.error("Failed to fetch missions from database", err);
+        addEvent("warning", "COMMAND", "Database connection lost. Operating in standalone local directory.");
+      }
     };
-    setEvents((prev) => [...prev, newEvent]);
-  };
+
+    fetchMissions();
+  }, [isAuthenticated, token]);
 
   // Inject failure action
   const handleInjectFailure = async (failureType: string) => {
@@ -286,7 +361,46 @@ export default function Home() {
   };
 
   // Mission management triggers
-  const handleCreateMission = (name: string, description: string, satelliteId: string | null) => {
+  const handleCreateMission = async (name: string, description: string, satelliteId: string | null) => {
+    if (token) {
+      try {
+        const response = await fetch("http://localhost:8081/api/v1/missions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            name,
+            description: description || null,
+            status: "planned",
+            satellite_id: satelliteId || null,
+          }),
+        });
+
+        if (response.ok) {
+          const newM = await response.json();
+          const missionObj: Mission = {
+            id: newM.id,
+            name: newM.name,
+            description: newM.description || "",
+            status: newM.status as Mission["status"],
+            satellite_id: satelliteId,
+            start_date: newM.start_date.split("T")[0],
+          };
+          setMissions((prev) => [...prev, missionObj]);
+          addEvent("info", "COMMAND", `Provisioned new mission profile: "${name}" in TimescaleDB.`);
+          return;
+        } else {
+          const text = await response.text();
+          addEvent("error", "COMMAND", `Failed to deploy mission: ${text}`);
+        }
+      } catch (err) {
+        console.error("Failed to post mission", err);
+      }
+    }
+
+    // Local fallback if no connection
     const newMission: Mission = {
       id: `m-${Date.now()}`,
       name,
@@ -296,13 +410,35 @@ export default function Home() {
       start_date: new Date().toISOString().substring(0, 10),
     };
     setMissions((prev) => [...prev, newMission]);
-    addEvent("info", "COMMAND", `Provisioned new mission profile: "${name}"`);
+    addEvent("info", "COMMAND", `Provisioned local mission profile: "${name}" (Offline mode).`);
   };
 
-  const handleDeleteMission = (id: string) => {
+  const handleDeleteMission = async (id: string) => {
     const m = missions.find(mission => mission.id === id);
+    if (token && id.length === 36) { // database UUID has 36 characters
+      try {
+        const response = await fetch(`http://localhost:8081/api/v1/missions/${id}`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          setMissions((prev) => prev.filter((item) => item.id !== id));
+          if (m) addEvent("warning", "COMMAND", `Terminated mission profile: "${m.name}" in TimescaleDB.`);
+          return;
+        } else {
+          const text = await response.text();
+          addEvent("error", "COMMAND", `Failed to delete mission from DB: ${text}`);
+        }
+      } catch (err) {
+        console.error("Failed to delete mission", err);
+      }
+    }
+
+    // Local fallback if offline or local id
     setMissions((prev) => prev.filter((item) => item.id !== id));
-    if (m) addEvent("warning", "COMMAND", `Terminated mission profile: "${m.name}"`);
+    if (m) addEvent("warning", "COMMAND", `Terminated local mission profile: "${m.name}".`);
   };
 
   if (loadingSession) {

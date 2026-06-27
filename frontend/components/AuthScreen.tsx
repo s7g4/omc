@@ -40,8 +40,9 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       }
 
       onAuthSuccess(data.token, data.username);
-    } catch (err: any) {
-      setError(err.message || "Failed to connect to authentication server.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to connect to authentication server.";
+      setError(message);
     } finally {
       setLoading(false);
     }

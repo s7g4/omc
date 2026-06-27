@@ -1,33 +1,29 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use super::models::{AuthResponse, Claims, LoginRequest, RegisterRequest, User};
+use crate::AppState;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use jsonwebtoken::{encode, Header, EncodingKey};
+use axum::{extract::State, http::StatusCode, Json};
+use jsonwebtoken::{encode, EncodingKey, Header};
 use uuid::Uuid;
-use crate::AppState;
-use super::models::{RegisterRequest, LoginRequest, AuthResponse, Claims, User};
 
 pub async fn register_user(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), (StatusCode, &'static str)> {
     if payload.username.trim().is_empty() || payload.password.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Username and password cannot be empty"));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Username and password cannot be empty",
+        ));
     }
 
     // Check if user already exists
-    let existing_user = sqlx::query!(
-        "SELECT id FROM users WHERE username = $1",
-        payload.username
-    )
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database query failure"))?;
+    let existing_user = sqlx::query!("SELECT id FROM users WHERE username = $1", payload.username)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database query failure"))?;
 
     if existing_user.is_some() {
         return Err((StatusCode::CONFLICT, "Username is already taken"));
@@ -51,7 +47,12 @@ pub async fn register_user(
     )
     .execute(&state.db)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database insertion failure"))?;
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Database insertion failure",
+        )
+    })?;
 
     // Generate JWT token
     let token = generate_jwt(&payload.username, new_id)?;
@@ -85,11 +86,18 @@ pub async fn login_user(
     };
 
     // Verify password hash
-    let parsed_hash = PasswordHash::new(&user.password_hash)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to parse stored password hash"))?;
+    let parsed_hash = PasswordHash::new(&user.password_hash).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to parse stored password hash",
+        )
+    })?;
 
     let argon2 = Argon2::default();
-    if argon2.verify_password(payload.password.as_bytes(), &parsed_hash).is_err() {
+    if argon2
+        .verify_password(payload.password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
         return Err((StatusCode::UNAUTHORIZED, "Invalid username or password"));
     }
 
@@ -106,8 +114,9 @@ pub async fn login_user(
 }
 
 fn generate_jwt(username: &str, user_id: Uuid) -> Result<String, (StatusCode, &'static str)> {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "mission_control_default_secret_key_12345".to_string());
-    
+    let secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "mission_control_default_secret_key_12345".to_string());
+
     let expiration = chrono::Utc::now() + chrono::Duration::hours(24);
     let claims = Claims {
         sub: user_id.to_string(),
@@ -118,7 +127,7 @@ fn generate_jwt(username: &str, user_id: Uuid) -> Result<String, (StatusCode, &'
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes())
+        &EncodingKey::from_secret(secret.as_bytes()),
     )
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to encode token"))
 }

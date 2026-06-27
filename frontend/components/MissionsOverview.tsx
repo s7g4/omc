@@ -6,7 +6,6 @@ import {
   Plus, 
   Satellite, 
   Calendar, 
-  Loader2, 
   Trash2 
 } from "lucide-react";
 
@@ -197,7 +196,7 @@ export default function MissionsOverview({
           </div>
         ) : (
           <div className="glass-panel border-[#27272a]/40 rounded-xl p-5 text-center text-zinc-500 font-mono text-[10px] space-y-2">
-            <span>&gt; SELECT 'NEW MISSION' TO LAUNCH A TARGET PROFILE</span>
+            <span>&gt; SELECT &quot;NEW MISSION&quot; TO LAUNCH A TARGET PROFILE</span>
           </div>
         )}
       </div>

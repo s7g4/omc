@@ -3,7 +3,6 @@
 import React from "react";
 import { 
   Radio, 
-  Settings, 
   Database, 
   ShieldAlert, 
   Terminal, 
