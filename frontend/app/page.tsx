@@ -167,32 +167,43 @@ export default function Home() {
 
       ws.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data) as SimulatorPayload;
-          // Only map if it matches current selected satellite
-          if (payload.satellite_id === selectedSatellite) {
+          const payload = JSON.parse(event.data);
+
+          // 1. Process as Event broadcast if severity/message fields are present
+          if (payload.severity && payload.message) {
+            if (payload.satellite_id === selectedSatellite) {
+              const mappedType = payload.severity === "error" ? "error" : payload.severity === "warning" ? "warning" : "info";
+              addEvent(mappedType, "SYSTEM", payload.message);
+            }
+            return;
+          }
+
+          // 2. Otherwise process as standard Telemetry log
+          const tele = payload as SimulatorPayload;
+          if (tele.satellite_id === selectedSatellite) {
             const formattedTime = new Date().toLocaleTimeString();
             const newData = {
               time: formattedTime,
-              altitude: payload.altitude,
-              velocity: payload.velocity,
-              temp: payload.battery_temp,
-              solar: payload.solar_power,
-              battery_level: payload.battery_level,
-              battery_temp: payload.battery_temp,
-              solar_power: payload.solar_power,
-              latitude: payload.latitude,
-              longitude: payload.longitude,
+              altitude: tele.altitude,
+              velocity: tele.velocity,
+              temp: tele.battery_temp,
+              solar: tele.solar_power,
+              battery_level: tele.battery_level,
+              battery_temp: tele.battery_temp,
+              solar_power: tele.solar_power,
+              latitude: tele.latitude,
+              longitude: tele.longitude,
             };
 
             setTelemetry(newData);
             setHistory((prev) => [...prev.slice(-29), newData]);
 
             // Append warning events if any fields are anomalous
-            if (payload.battery_level < 20) {
-              addEvent("error", "POWER", `Critical battery reserve: ${payload.battery_level.toFixed(1)}%`);
+            if (tele.battery_level < 20) {
+              addEvent("error", "POWER", `Critical battery reserve: ${tele.battery_level.toFixed(1)}%`);
             }
-            if (payload.battery_temp > 45) {
-              addEvent("error", "THERMAL", `Subsystem overheat: ${payload.battery_temp.toFixed(1)}°C`);
+            if (tele.battery_temp > 45) {
+              addEvent("error", "THERMAL", `Subsystem overheat: ${tele.battery_temp.toFixed(1)}°C`);
             }
           }
         } catch (e) {
@@ -354,10 +365,26 @@ export default function Home() {
   };
 
   // Reset simulator
-  const handleResetSimulator = () => {
+  const handleResetSimulator = async () => {
     const satName = SATELLITES.find(s => s.id === selectedSatellite)?.name || "Satellite";
     addEvent("info", "SIMULATOR", `Discharged all active fault registers. System reboot nominal for ${satName}.`);
     setActiveFault(null);
+
+    // If backend is active, dispatch payload with authorization header
+    if (isWebSocketConnected) {
+      try {
+        await fetch("http://localhost:8081/api/v1/simulator/inject", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ satellite_id: selectedSatellite, fault: null }),
+        });
+      } catch (err) {
+        console.error("Failed to post fault reset to simulator endpoint", err);
+      }
+    }
   };
 
   // Mission management triggers

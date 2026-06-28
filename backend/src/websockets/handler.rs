@@ -22,9 +22,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     };
 
-    // 2. Subscribe to "telemetry" channel
+    // 2. Subscribe to "telemetry" and "events" channels
     if let Err(e) = pubsub.subscribe("telemetry").await {
         tracing::error!("Failed to subscribe to Redis telemetry channel: {:?}", e);
+        return;
+    }
+    if let Err(e) = pubsub.subscribe("events").await {
+        tracing::error!("Failed to subscribe to Redis events channel: {:?}", e);
         return;
     }
 

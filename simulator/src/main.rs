@@ -1,4 +1,6 @@
-use serde::Serialize;
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
@@ -16,6 +18,14 @@ struct TelemetryPayload {
     altitude: f64,
     latitude: f64,
     longitude: f64,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(dead_code)]
+struct SimulatorControlMsg {
+    satellite_id: Uuid,
+    command: String,
+    fault: Option<String>,
 }
 
 #[tokio::main]
@@ -42,6 +52,56 @@ async fn main() {
     tracing::info!("Simulating Satellite ID: {}", config.satellite_id);
     tracing::info!("Targeting API Endpoint: {}", config.backend_url);
 
+    // Shared thread-safe variable to hold current active fault overlay
+    let active_fault = Arc::new(tokio::sync::Mutex::new(None::<String>));
+
+    // Connect to Redis for control command subscription
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6380".to_string());
+    let redis_client = redis::Client::open(redis_url).expect("Failed to initialize Redis client");
+
+    let active_fault_clone = Arc::clone(&active_fault);
+    let satellite_id = config.satellite_id;
+
+    tokio::spawn(async move {
+        loop {
+            tracing::info!("Connecting to Redis control stream...");
+            match redis_client.get_async_pubsub().await {
+                Ok(mut pubsub) => {
+                    if let Err(e) = pubsub.subscribe("simulator:control").await {
+                        tracing::error!("Failed to subscribe to Redis control channel: {:?}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                    tracing::info!("Subscribed to control channel 'simulator:control'");
+
+                    let mut pubsub_stream = pubsub.into_on_message();
+                    while let Some(msg) = pubsub_stream.next().await {
+                        let payload: String = match msg.get_payload() {
+                            Ok(p) => p,
+                            Err(e) => {
+                                tracing::error!("Failed to read control payload: {:?}", e);
+                                continue;
+                            }
+                        };
+
+                        if let Ok(cmd) = serde_json::from_str::<SimulatorControlMsg>(&payload) {
+                            if cmd.satellite_id == satellite_id {
+                                let mut lock = active_fault_clone.lock().await;
+                                *lock = cmd.fault.clone();
+                                tracing::warn!("System Override register set: {:?}", *lock);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Redis command link failed: {:?}", e);
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
+
     let mut state = physics::SatelliteState::new();
     let tick_duration = Duration::from_millis(config.tick_interval_ms);
 
@@ -49,7 +109,13 @@ async fn main() {
     let http_client = reqwest::Client::new();
 
     loop {
-        state.tick();
+        // Read current active fault from control link state
+        let current_fault = {
+            let lock = active_fault.lock().await;
+            lock.clone()
+        };
+
+        state.tick(current_fault.as_deref());
 
         let payload = TelemetryPayload {
             satellite_id: config.satellite_id,
@@ -73,9 +139,10 @@ async fn main() {
             Ok(response) => {
                 if response.status().is_success() {
                     tracing::info!(
-                        "Telemetry sent | Lat: {:+.4}, Lon: {:+.4} | Status: {}",
+                        "Telemetry sent | Lat: {:+.4}, Lon: {:+.4} | Overrides: {:?} | Status: {}",
                         state.latitude,
                         state.longitude,
+                        current_fault,
                         response.status()
                     );
                 } else {

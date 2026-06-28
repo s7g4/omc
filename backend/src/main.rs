@@ -70,6 +70,10 @@ async fn main() {
             "/api/v1/missions/:id/unassign",
             post(missions::handlers::unassign_satellite),
         )
+        .route(
+            "/api/v1/simulator/inject",
+            post(telemetry::handlers::inject_fault),
+        )
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8081));

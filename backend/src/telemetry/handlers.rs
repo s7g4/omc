@@ -83,3 +83,101 @@ pub async fn ingest_telemetry(
 
     (StatusCode::CREATED, Json(telemetry)).into_response()
 }
+
+#[derive(serde::Deserialize)]
+pub struct InjectFaultRequest {
+    pub satellite_id: uuid::Uuid,
+    pub fault: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct RedisControlMsg {
+    satellite_id: uuid::Uuid,
+    command: &'static str,
+    fault: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct WsEventMsg {
+    event_id: uuid::Uuid,
+    satellite_id: uuid::Uuid,
+    severity: &'static str,
+    message: String,
+    timestamp: String,
+}
+
+pub async fn inject_fault(
+    State(state): State<AppState>,
+    _claims: crate::auth::models::Claims,
+    Json(payload): Json<InjectFaultRequest>,
+) -> impl IntoResponse {
+    let severity = if payload.fault.is_some() {
+        "warning"
+    } else {
+        "info"
+    };
+    let msg = if let Some(ref f) = payload.fault {
+        format!("Manual override fault injected: [{}]", f)
+    } else {
+        "Manual override fault registers reset nominal".to_string()
+    };
+    let event_id = uuid::Uuid::new_v4();
+
+    // 1. Log event to Postgres database events table
+    let insert_event = sqlx::query!(
+        r#"
+        INSERT INTO events (id, satellite_id, severity, message)
+        VALUES ($1, $2, $3, $4)
+        "#,
+        event_id,
+        payload.satellite_id,
+        severity,
+        msg
+    )
+    .execute(&state.db)
+    .await;
+
+    if let Err(e) = insert_event {
+        tracing::error!("Failed to log fault injection event: {:?}", e);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Database write error").into_response();
+    }
+
+    // 2. Dispatch command to Redis Pub/Sub
+    let mut redis_conn = match state.redis.get_multiplexed_tokio_connection().await {
+        Ok(conn) => conn,
+        Err(e) => {
+            tracing::error!("Failed to connect to Redis for command link: {:?}", e);
+            return (
+                StatusCode::ACCEPTED,
+                "Event logged to DB; Redis stream failed",
+            )
+                .into_response();
+        }
+    };
+
+    let control_msg = RedisControlMsg {
+        satellite_id: payload.satellite_id,
+        command: "inject_fault",
+        fault: payload.fault.clone(),
+    };
+
+    let ws_event = WsEventMsg {
+        event_id,
+        satellite_id: payload.satellite_id,
+        severity,
+        message: msg,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+
+    if let Ok(serialized_control) = serde_json::to_string(&control_msg) {
+        let _: Result<(), _> = redis_conn
+            .publish("simulator:control", serialized_control)
+            .await;
+    }
+
+    if let Ok(serialized_event) = serde_json::to_string(&ws_event) {
+        let _: Result<(), _> = redis_conn.publish("events", serialized_event).await;
+    }
+
+    (StatusCode::ACCEPTED, "Override requested").into_response()
+}
