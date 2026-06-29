@@ -17,7 +17,7 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarProps) {
+const Sidebar = React.memo(function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarProps) {
   const menuItems = [
     { id: "dashboard", label: "Telemetry Live", icon: Activity },
     { id: "missions", label: "Missions", icon: FolderKanban },
@@ -90,4 +90,6 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }: SidebarPr
       </div>
     </aside>
   );
-}
+})
+
+export default Sidebar;

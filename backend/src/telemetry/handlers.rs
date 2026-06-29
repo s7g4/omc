@@ -65,24 +65,18 @@ pub async fn ingest_telemetry(
         }
     };
 
-    // 4. Publish to Redis Pub/Sub for Real-Time Streaming
-    let mut redis_conn = match state.redis.get_multiplexed_tokio_connection().await {
-        Ok(conn) => conn,
-        Err(e) => {
-            tracing::error!("Failed to get multiplexed Redis connection: {:?}", e);
-            // We still return 201 Created because the data is safely written to Postgres
-            return (StatusCode::CREATED, Json(telemetry)).into_response();
-        }
-    };
-
+    // 4. Publish to NATS JetStream for Real-Time Streaming
     if let Ok(serialized) = serde_json::to_string(&telemetry) {
-        let publish_result: Result<(), redis::RedisError> =
-            redis_conn.publish("telemetry", serialized).await;
+        let subject = format!("telemetry.{}", telemetry.satellite_id);
+        let publish_result = state.nats.publish(subject, serialized.into()).await;
 
         if let Err(e) = publish_result {
-            tracing::error!("Failed to publish telemetry to Redis: {:?}", e);
+            tracing::error!("Failed to publish telemetry to NATS JetStream: {:?}", e);
         } else {
-            tracing::debug!("Telemetry published to Redis channel 'telemetry'");
+            tracing::debug!(
+                "Telemetry published to NATS JetStream subject 'telemetry.{}'",
+                telemetry.satellite_id
+            );
         }
     }
 

@@ -18,7 +18,7 @@ interface SimControlProps {
   isSimulating: boolean;
 }
 
-export default function SimControl({ 
+const SimControl = React.memo(function SimControl({ 
   onInjectFailure, 
   onResetSimulator, 
   isSimulating 
@@ -148,4 +148,6 @@ export default function SimControl({
       </div>
     </div>
   );
-}
+})
+
+export default SimControl;

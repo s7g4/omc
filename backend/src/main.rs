@@ -15,6 +15,7 @@ mod websockets;
 pub struct AppState {
     pub db: sqlx::PgPool,
     pub redis: redis::Client,
+    pub nats: async_nats::Client,
 }
 
 #[tokio::main]
@@ -31,16 +32,36 @@ async fn main() {
     let redis_url =
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6380".to_string());
 
+    let nats_url =
+        std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
+
     // Initialize database pool
     let pool = db::init_db(&database_url).await;
 
     // Initialize Redis client
     let redis_client = redis::Client::open(redis_url).expect("Failed to initialize Redis client");
 
+    // Initialize NATS client
+    let nats_client = async_nats::connect(nats_url)
+        .await
+        .expect("Failed to connect to NATS");
+
+    // Configure NATS JetStream
+    let jetstream = async_nats::jetstream::new(nats_client.clone());
+    jetstream
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: "TELEMETRY_STREAM".to_string(),
+            subjects: vec!["telemetry.>".to_string()],
+            ..Default::default()
+        })
+        .await
+        .expect("Failed to create NATS JetStream stream");
+
     // Bundle into shared state
     let state = AppState {
         db: pool,
         redis: redis_client,
+        nats: nats_client,
     };
 
     let app = Router::new()

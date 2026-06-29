@@ -17,7 +17,7 @@ interface HeaderProps {
   satellites: Array<{ id: string; name: string; status: string }>;
 }
 
-export default function Header({ 
+const Header = React.memo(function Header({ 
   activeTab, 
   selectedSatellite, 
   setSelectedSatellite,
@@ -126,4 +126,6 @@ export default function Header({
       </div>
     </header>
   );
-}
+})
+
+export default Header;

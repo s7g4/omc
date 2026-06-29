@@ -169,7 +169,7 @@ export default function Home() {
     let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const connectWS = () => {
-      ws = new WebSocket("ws://localhost:8081/api/v1/telemetry/ws");
+      ws = new WebSocket(`ws://localhost:8081/api/v1/telemetry/ws?satellite_id=${selectedSatellite}`);
 
       ws.onopen = () => {
         setIsWebSocketConnected(true);
