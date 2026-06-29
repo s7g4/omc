@@ -39,6 +39,17 @@ interface BackendMission {
   start_date: string;
 }
 
+interface HistoricalAggregateItem {
+  bucket_time: string;
+  avg_altitude: number | null;
+  avg_velocity: number | null;
+  avg_battery_temp: number | null;
+  avg_solar_power: number | null;
+  avg_battery_level: number | null;
+  avg_latitude: number | null;
+  avg_longitude: number | null;
+}
+
 interface SimulatorPayload {
   satellite_id: string;
   battery_level: number;
@@ -230,6 +241,87 @@ export default function Home() {
     };
   }, [selectedSatellite, isAuthenticated]);
 
+  // Load missions from backend on authentication
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+
+    const fetchMissions = async () => {
+      try {
+        const response = await fetch("http://localhost:8081/api/v1/missions", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const list = await response.json();
+          const mapped = list.map((m: BackendMission) => ({
+            id: m.id,
+            name: m.name,
+            description: m.description || "",
+            status: m.status,
+            satellite_id: null,
+            start_date: m.start_date.split("T")[0],
+          }));
+          setMissions(mapped);
+          addEvent("info", "COMMAND", `Loaded ${mapped.length} mission profiles from database.`);
+        }
+      } catch (err) {
+        console.error("Failed to fetch missions from database", err);
+        addEvent("warning", "COMMAND", "Database connection lost. Operating in standalone local directory.");
+      }
+    };
+
+    fetchMissions();
+  }, [isAuthenticated, token]);
+
+  // Load telemetry history from backend TimescaleDB
+  useEffect(() => {
+    if (!isAuthenticated || !token || !selectedSatellite) return;
+
+    const fetchHistory = async () => {
+      try {
+        const response = await fetch(`http://localhost:8081/api/v1/telemetry/${selectedSatellite}/history?bucket=10&limit=30`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const list = await response.json();
+          // Map TimescaleDB aggregates back into chart data points
+          // Reverse list because DB query returns newest first, but chart wants chronologically oldest -> newest
+          const mapped = list.map((item: HistoricalAggregateItem) => {
+            const timeObj = new Date(item.bucket_time);
+            const formattedTime = timeObj.toLocaleTimeString();
+            return {
+              time: formattedTime,
+              altitude: item.avg_altitude ?? 0.0,
+              velocity: item.avg_velocity ?? 0.0,
+              temp: item.avg_battery_temp ?? 0.0,
+              solar: item.avg_solar_power ?? 0.0,
+              battery_level: item.avg_battery_level ?? 0.0,
+              battery_temp: item.avg_battery_temp ?? 0.0,
+              solar_power: item.avg_solar_power ?? 0.0,
+              latitude: item.avg_latitude ?? 0.0,
+              longitude: item.avg_longitude ?? 0.0,
+            };
+          }).reverse();
+
+          setHistory(mapped);
+          
+          if (mapped.length > 0) {
+            const latest = mapped[mapped.length - 1];
+            setTelemetry(latest);
+            addEvent("info", "DATABASE", `Loaded ${mapped.length} historical timeseries buckets from TimescaleDB.`);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch telemetry history from database", err);
+      }
+    };
+
+    fetchHistory();
+  }, [selectedSatellite, isAuthenticated, token]);
+
   // Mock Telemetry Generator Loop (runs when WebSocket is disconnected)
   useEffect(() => {
     if (!isAuthenticated || isWebSocketConnected || !isSimulating) return;
@@ -307,38 +399,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [selectedSatellite, isWebSocketConnected, isSimulating, activeFault, isAuthenticated]);
 
-  // Load missions from backend on authentication
-  useEffect(() => {
-    if (!isAuthenticated || !token) return;
 
-    const fetchMissions = async () => {
-      try {
-        const response = await fetch("http://localhost:8081/api/v1/missions", {
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-        if (response.ok) {
-          const list = await response.json();
-          const mapped = list.map((m: BackendMission) => ({
-            id: m.id,
-            name: m.name,
-            description: m.description || "",
-            status: m.status,
-            satellite_id: null,
-            start_date: m.start_date.split("T")[0],
-          }));
-          setMissions(mapped);
-          addEvent("info", "COMMAND", `Loaded ${mapped.length} mission profiles from database.`);
-        }
-      } catch (err) {
-        console.error("Failed to fetch missions from database", err);
-        addEvent("warning", "COMMAND", "Database connection lost. Operating in standalone local directory.");
-      }
-    };
-
-    fetchMissions();
-  }, [isAuthenticated, token]);
 
   // Inject failure action
   const handleInjectFailure = async (failureType: string) => {

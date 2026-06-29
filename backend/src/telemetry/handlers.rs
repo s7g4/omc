@@ -1,7 +1,12 @@
 use crate::telemetry::models::CreateTelemetry;
 use crate::telemetry::repository::TelemetryRepository;
 use crate::AppState;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
 use redis::AsyncCommands;
 
 pub async fn ingest_telemetry(
@@ -180,4 +185,29 @@ pub async fn inject_fault(
     }
 
     (StatusCode::ACCEPTED, "Override requested").into_response()
+}
+
+#[derive(serde::Deserialize)]
+pub struct HistoryParams {
+    pub bucket: Option<i32>,
+    pub limit: Option<i64>,
+}
+
+pub async fn get_history(
+    State(state): State<AppState>,
+    Path(satellite_id): Path<uuid::Uuid>,
+    Query(params): Query<HistoryParams>,
+    _claims: crate::auth::models::Claims,
+) -> impl IntoResponse {
+    let bucket = params.bucket.unwrap_or(10);
+    let limit = params.limit.unwrap_or(30);
+
+    match TelemetryRepository::get_history_aggregated(&state.db, satellite_id, bucket, limit).await
+    {
+        Ok(history) => (StatusCode::OK, Json(history)).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to fetch telemetry history: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database query failure").into_response()
+        }
+    }
 }

@@ -49,6 +49,10 @@ async fn main() {
             "/api/v1/telemetry",
             post(telemetry::handlers::ingest_telemetry),
         )
+        .route(
+            "/api/v1/telemetry/:id/history",
+            get(telemetry::handlers::get_history),
+        )
         .route("/api/v1/telemetry/ws", get(websockets::handler::ws_handler))
         .route("/api/v1/auth/register", post(auth::handlers::register_user))
         .route("/api/v1/auth/login", post(auth::handlers::login_user))

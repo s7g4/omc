@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                time_bucket($1 * INTERVAL '1 second', created_at) AS \"bucket_time!\",\n                AVG(battery_level) AS avg_battery_level,\n                AVG(battery_temp) AS avg_battery_temp,\n                AVG(solar_power) AS avg_solar_power,\n                AVG(velocity) AS avg_velocity,\n                AVG(altitude) AS avg_altitude,\n                AVG(latitude) AS avg_latitude,\n                AVG(longitude) AS avg_longitude\n            FROM telemetry\n            WHERE satellite_id = $2\n            GROUP BY time_bucket($1 * INTERVAL '1 second', created_at)\n            ORDER BY time_bucket($1 * INTERVAL '1 second', created_at) DESC\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bucket_time!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "avg_battery_level",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "avg_battery_temp",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "avg_solar_power",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 4,
+        "name": "avg_velocity",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "avg_altitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "avg_latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "avg_longitude",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "77efc5e658251c2b4aa0df94e3d1575dda7a86f2ac9e85da3c699980aa798f2f"
+}

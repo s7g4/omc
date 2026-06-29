@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::telemetry::models::{CreateTelemetry, Telemetry};
+use crate::telemetry::models::{CreateTelemetry, Telemetry, TelemetryAggregate};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -63,6 +63,38 @@ impl TelemetryRepository {
             ORDER BY created_at DESC
             LIMIT $2
             "#,
+            satellite_id,
+            limit
+        )
+        .fetch_all(pool)
+        .await
+    }
+
+    pub async fn get_history_aggregated(
+        pool: &PgPool,
+        satellite_id: Uuid,
+        bucket_seconds: i32,
+        limit: i64,
+    ) -> Result<Vec<TelemetryAggregate>, sqlx::Error> {
+        sqlx::query_as!(
+            TelemetryAggregate,
+            r#"
+            SELECT 
+                time_bucket($1 * INTERVAL '1 second', created_at) AS "bucket_time!",
+                AVG(battery_level) AS avg_battery_level,
+                AVG(battery_temp) AS avg_battery_temp,
+                AVG(solar_power) AS avg_solar_power,
+                AVG(velocity) AS avg_velocity,
+                AVG(altitude) AS avg_altitude,
+                AVG(latitude) AS avg_latitude,
+                AVG(longitude) AS avg_longitude
+            FROM telemetry
+            WHERE satellite_id = $2
+            GROUP BY time_bucket($1 * INTERVAL '1 second', created_at)
+            ORDER BY time_bucket($1 * INTERVAL '1 second', created_at) DESC
+            LIMIT $3
+            "#,
+            f64::from(bucket_seconds),
             satellite_id,
             limit
         )

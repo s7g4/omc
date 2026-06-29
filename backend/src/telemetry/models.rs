@@ -28,3 +28,15 @@ pub struct CreateTelemetry {
     pub latitude: f64,
     pub longitude: f64,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TelemetryAggregate {
+    pub bucket_time: DateTime<Utc>,
+    pub avg_battery_level: Option<f64>,
+    pub avg_battery_temp: Option<f64>,
+    pub avg_solar_power: Option<f64>,
+    pub avg_velocity: Option<f64>,
+    pub avg_altitude: Option<f64>,
+    pub avg_latitude: Option<f64>,
+    pub avg_longitude: Option<f64>,
+}
