@@ -1,5 +1,5 @@
 use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -8,17 +8,13 @@ use uuid::Uuid;
 mod config;
 mod physics;
 
-#[derive(Serialize)]
-struct TelemetryPayload {
-    satellite_id: Uuid,
-    battery_level: f64,
-    battery_temp: f64,
-    solar_power: f64,
-    velocity: f64,
-    altitude: f64,
-    latitude: f64,
-    longitude: f64,
+// Include generated code
+pub mod telemetry_proto {
+    tonic::include_proto!("telemetry");
 }
+
+use telemetry_proto::telemetry_ingest_client::TelemetryIngestClient;
+use telemetry_proto::TelemetryRequest;
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
@@ -50,7 +46,6 @@ async fn main() {
     };
 
     tracing::info!("Simulating Satellite ID: {}", config.satellite_id);
-    tracing::info!("Targeting API Endpoint: {}", config.backend_url);
 
     // Shared thread-safe variable to hold current active fault overlay
     let active_fault = Arc::new(tokio::sync::Mutex::new(None::<String>));
@@ -105,8 +100,10 @@ async fn main() {
     let mut state = physics::SatelliteState::new();
     let tick_duration = Duration::from_millis(config.tick_interval_ms);
 
-    // Reuse a single Client instance for connection pooling
-    let http_client = reqwest::Client::new();
+    let grpc_addr = std::env::var("GRPC_URL").unwrap_or_else(|_| "http://[::1]:50051".to_string());
+    tracing::info!("Targeting gRPC Endpoint: {}", grpc_addr);
+
+    let mut grpc_client = None;
 
     loop {
         // Read current active fault from control link state
@@ -117,43 +114,50 @@ async fn main() {
 
         state.tick(current_fault.as_deref());
 
-        let payload = TelemetryPayload {
-            satellite_id: config.satellite_id,
-            battery_level: state.battery_level,
-            battery_temp: state.battery_temp,
-            solar_power: state.solar_power,
-            velocity: state.velocity,
-            altitude: state.altitude,
-            latitude: state.latitude,
-            longitude: state.longitude,
-        };
+        // Establish / retry gRPC client connection
+        if grpc_client.is_none() {
+            match TelemetryIngestClient::connect(grpc_addr.clone()).await {
+                Ok(client) => {
+                    tracing::info!("Successfully connected to gRPC server");
+                    grpc_client = Some(client);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to connect to gRPC server: {:?}. Will retry...", e);
+                }
+            }
+        }
 
-        // Send telemetry payload asynchronously
-        let request_result = http_client
-            .post(&config.backend_url)
-            .json(&payload)
-            .send()
-            .await;
+        if let Some(ref mut client) = grpc_client {
+            let request = tonic::Request::new(TelemetryRequest {
+                satellite_id: config.satellite_id.to_string(),
+                battery_level: state.battery_level,
+                battery_temp: state.battery_temp,
+                solar_power: state.solar_power,
+                velocity: state.velocity,
+                altitude: state.altitude,
+                latitude: state.latitude,
+                longitude: state.longitude,
+            });
 
-        match request_result {
-            Ok(response) => {
-                if response.status().is_success() {
+            match client.ingest_telemetry(request).await {
+                Ok(response) => {
+                    let resp = response.into_inner();
                     tracing::info!(
-                        "Telemetry sent | Lat: {:+.4}, Lon: {:+.4} | Overrides: {:?} | Status: {}",
+                        "Telemetry sent over gRPC | Lat: {:+.4}, Lon: {:+.4} | Overrides: {:?} | Status: {} {}",
                         state.latitude,
                         state.longitude,
                         current_fault,
-                        response.status()
-                    );
-                } else {
-                    tracing::warn!(
-                        "Failed to send telemetry. Server responded: {}",
-                        response.status()
+                        resp.status,
+                        resp.message
                     );
                 }
-            }
-            Err(e) => {
-                tracing::error!("Network error: Failed to connect to telemetry API: {}", e);
+                Err(e) => {
+                    tracing::error!(
+                        "gRPC Ingestion request failed: {:?}. Resetting client...",
+                        e
+                    );
+                    grpc_client = None; // Reset on failure to trigger reconnect on next loop
+                }
             }
         }
 

@@ -116,7 +116,24 @@ async fn main() {
         .route("/metrics", get(metrics::metrics_handler))
         .nest("/api/v1", api_routes)
         .layer(cors)
-        .with_state(state);
+        .with_state(state.clone());
+
+    // Start gRPC Ingestion Server in the background
+    let grpc_state = state.clone();
+    tokio::spawn(async move {
+        let addr = "[::1]:50051".parse().unwrap();
+        let telemetry_service = telemetry::grpc::MyTelemetryIngest::new(grpc_state);
+
+        tracing::info!("Starting gRPC server on {}", addr);
+
+        tonic::transport::Server::builder()
+            .add_service(telemetry::grpc::TelemetryIngestServer::new(
+                telemetry_service,
+            ))
+            .serve(addr)
+            .await
+            .unwrap();
+    });
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8081));
     tracing::info!("Starting server on {}", addr);

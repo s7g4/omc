@@ -1,0 +1,22 @@
+syntax = "proto3";
+package telemetry;
+
+service TelemetryIngest {
+    rpc IngestTelemetry(TelemetryRequest) returns (TelemetryResponse);
+}
+
+message TelemetryRequest {
+    string satellite_id = 1;
+    double battery_level = 2;
+    double battery_temp = 3;
+    double solar_power = 4;
+    double velocity = 5;
+    double altitude = 6;
+    double latitude = 7;
+    double longitude = 8;
+}
+
+message TelemetryResponse {
+    string status = 1;
+    string message = 2;
+}

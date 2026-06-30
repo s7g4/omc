@@ -27,3 +27,8 @@ jsonwebtoken = "9.3"
 async-nats = "0.35"
 prometheus = { version = "0.13", features = ["process"] }
 tower-http = { version = "0.5", features = ["cors"] }
+tonic = "0.12"
+prost = "0.13"
+
+[build-dependencies]
+tonic-build = "0.12"
