@@ -22,6 +22,20 @@ pub async fn ws_handler(
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, satellite_id: Option<uuid::Uuid>) {
+    // Increment active websocket connections gauge with RAII guard
+    if let Some(gauge) = crate::metrics::ACTIVE_WEBSOCKET_CONNECTIONS.get() {
+        gauge.inc();
+    }
+    struct WsConnectionGuard;
+    impl Drop for WsConnectionGuard {
+        fn drop(&mut self) {
+            if let Some(gauge) = crate::metrics::ACTIVE_WEBSOCKET_CONNECTIONS.get() {
+                gauge.dec();
+            }
+        }
+    }
+    let _guard = WsConnectionGuard;
+
     // 1. Get async Pub/Sub connection to Redis (for events)
     let mut redis_pubsub = match state.redis.get_async_pubsub().await {
         Ok(ps) => ps,

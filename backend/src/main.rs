@@ -7,6 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
 mod db;
+mod metrics;
 mod missions;
 mod telemetry;
 mod websockets;
@@ -25,6 +26,9 @@ async fn main() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    // Initialize metrics collectors
+    metrics::init_metrics();
 
     let database_url =
         std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
@@ -64,41 +68,54 @@ async fn main() {
         nats: nats_client,
     };
 
-    let app = Router::new()
-        .route("/health", get(health_check))
+    let api_routes = Router::new()
+        .route("/telemetry", post(telemetry::handlers::ingest_telemetry))
         .route(
-            "/api/v1/telemetry",
-            post(telemetry::handlers::ingest_telemetry),
-        )
-        .route(
-            "/api/v1/telemetry/:id/history",
+            "/telemetry/:id/history",
             get(telemetry::handlers::get_history),
         )
-        .route("/api/v1/telemetry/ws", get(websockets::handler::ws_handler))
-        .route("/api/v1/auth/register", post(auth::handlers::register_user))
-        .route("/api/v1/auth/login", post(auth::handlers::login_user))
+        .route("/telemetry/ws", get(websockets::handler::ws_handler))
+        .route("/auth/register", post(auth::handlers::register_user))
+        .route("/auth/login", post(auth::handlers::login_user))
         .route(
-            "/api/v1/missions",
+            "/missions",
             get(missions::handlers::list_missions).post(missions::handlers::create_mission),
         )
         .route(
-            "/api/v1/missions/:id",
+            "/missions/:id",
             get(missions::handlers::get_mission)
                 .put(missions::handlers::update_mission)
                 .delete(missions::handlers::delete_mission),
         )
         .route(
-            "/api/v1/missions/:id/assign",
+            "/missions/:id/assign",
             post(missions::handlers::assign_satellite),
         )
         .route(
-            "/api/v1/missions/:id/unassign",
+            "/missions/:id/unassign",
             post(missions::handlers::unassign_satellite),
         )
-        .route(
-            "/api/v1/simulator/inject",
-            post(telemetry::handlers::inject_fault),
-        )
+        .route("/simulator/inject", post(telemetry::handlers::inject_fault))
+        .route_layer(axum::middleware::from_fn(metrics::track_metrics));
+
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::DELETE,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ]);
+
+    let app = Router::new()
+        .route("/health", get(health_check))
+        .route("/metrics", get(metrics::metrics_handler))
+        .nest("/api/v1", api_routes)
+        .layer(cors)
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8081));

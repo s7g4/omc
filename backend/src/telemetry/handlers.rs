@@ -65,6 +65,11 @@ pub async fn ingest_telemetry(
         }
     };
 
+    // Increment telemetry ingested counter
+    if let Some(counter) = crate::metrics::TELEMETRY_INGESTED_TOTAL.get() {
+        counter.inc();
+    }
+
     // 4. Publish to NATS JetStream for Real-Time Streaming
     if let Ok(serialized) = serde_json::to_string(&telemetry) {
         let subject = format!("telemetry.{}", telemetry.satellite_id);
