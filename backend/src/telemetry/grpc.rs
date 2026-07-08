@@ -91,17 +91,21 @@ impl TelemetryIngest for MyTelemetryIngest {
             counter.inc();
         }
 
-        // 4. Publish to NATS JetStream for Real-Time Streaming
-        if let Ok(serialized) = serde_json::to_string(&telemetry) {
+        // 4. Publish to NATS JetStream for Real-Time Streaming (circuit-broken)
+        if !self.state.nats_breaker.allow_request() {
+            tracing::warn!("gRPC: NATS circuit breaker open; skipping publish for this tick");
+        } else if let Ok(serialized) = serde_json::to_string(&telemetry) {
             let subject = format!("telemetry.{}", telemetry.satellite_id);
             let publish_result = self.state.nats.publish(subject, serialized.into()).await;
 
             if let Err(e) = publish_result {
+                self.state.nats_breaker.record_failure();
                 tracing::error!(
                     "gRPC: Failed to publish telemetry to NATS JetStream: {:?}",
                     e
                 );
             } else {
+                self.state.nats_breaker.record_success();
                 tracing::debug!(
                     "gRPC: Telemetry published to NATS JetStream subject 'telemetry.{}'",
                     telemetry.satellite_id

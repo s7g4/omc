@@ -82,14 +82,22 @@ pub async fn ingest_telemetry(
         counter.inc();
     }
 
-    // 4. Publish to NATS JetStream for Real-Time Streaming
+    // 4. Publish to NATS JetStream for Real-Time Streaming (circuit-broken: skip if NATS
+    // has been failing repeatedly rather than piling up hung publish attempts).
+    if !state.nats_breaker.allow_request() {
+        tracing::warn!("NATS circuit breaker open; skipping publish for this tick");
+        return (StatusCode::CREATED, Json(telemetry)).into_response();
+    }
+
     if let Ok(serialized) = serde_json::to_string(&telemetry) {
         let subject = format!("telemetry.{}", telemetry.satellite_id);
         let publish_result = state.nats.publish(subject, serialized.into()).await;
 
         if let Err(e) = publish_result {
+            state.nats_breaker.record_failure();
             tracing::error!("Failed to publish telemetry to NATS JetStream: {:?}", e);
         } else {
+            state.nats_breaker.record_success();
             tracing::debug!(
                 "Telemetry published to NATS JetStream subject 'telemetry.{}'",
                 telemetry.satellite_id
@@ -166,10 +174,21 @@ pub async fn inject_fault(
         return (StatusCode::INTERNAL_SERVER_ERROR, "Database write error").into_response();
     }
 
-    // 2. Dispatch command to Redis Pub/Sub
+    // 2. Dispatch command to Redis Pub/Sub (circuit-broken: fail fast if Redis is down
+    // rather than hanging every fault-injection request on a dead connection).
+    if !state.redis_breaker.allow_request() {
+        tracing::warn!("Redis circuit breaker open; skipping control dispatch");
+        return (
+            StatusCode::ACCEPTED,
+            "Event logged to DB; Redis circuit breaker open",
+        )
+            .into_response();
+    }
+
     let mut redis_conn = match state.redis.get_multiplexed_tokio_connection().await {
         Ok(conn) => conn,
         Err(e) => {
+            state.redis_breaker.record_failure();
             tracing::error!("Failed to connect to Redis for command link: {:?}", e);
             return (
                 StatusCode::ACCEPTED,
@@ -178,6 +197,7 @@ pub async fn inject_fault(
                 .into_response();
         }
     };
+    state.redis_breaker.record_success();
 
     let control_msg = RedisControlMsg {
         satellite_id: payload.satellite_id,

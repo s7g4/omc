@@ -4,6 +4,7 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -15,10 +16,12 @@ mod health;
 mod metrics;
 mod missions;
 mod openapi;
+mod resilience;
 mod settings;
 mod telemetry;
 mod websockets;
 
+use resilience::CircuitBreaker;
 use settings::Settings;
 
 #[derive(Clone)]
@@ -27,6 +30,8 @@ pub struct AppState {
     pub redis: redis::Client,
     pub nats: async_nats::Client,
     pub settings: Arc<Settings>,
+    pub redis_breaker: Arc<CircuitBreaker>,
+    pub nats_breaker: Arc<CircuitBreaker>,
 }
 
 #[tokio::main]
@@ -74,13 +79,32 @@ async fn main() {
         .await
         .expect("Failed to create NATS JetStream stream");
 
+    let redis_breaker = Arc::new(CircuitBreaker::new(
+        settings.circuit_breaker.failure_threshold,
+        settings.circuit_breaker.cooldown_seconds,
+    ));
+    let nats_breaker = Arc::new(CircuitBreaker::new(
+        settings.circuit_breaker.failure_threshold,
+        settings.circuit_breaker.cooldown_seconds,
+    ));
+
     // Bundle into shared state
     let state = AppState {
         db: pool,
         redis: redis_client,
         nats: nats_client,
         settings: settings.clone(),
+        redis_breaker,
+        nats_breaker,
     };
+
+    let governor_config = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(settings.rate_limit.replenish_per_second)
+            .burst_size(settings.rate_limit.burst_size)
+            .finish()
+            .expect("Invalid rate limit configuration"),
+    );
 
     let api_routes = Router::new()
         .route("/telemetry", post(telemetry::handlers::ingest_telemetry))
@@ -113,6 +137,9 @@ async fn main() {
         )
         .route("/simulator/inject", post(telemetry::handlers::inject_fault))
         .route("/audit-logs", get(audit::list_audit_logs))
+        .layer(GovernorLayer {
+            config: governor_config,
+        })
         .route_layer(axum::middleware::from_fn(metrics::track_metrics))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
