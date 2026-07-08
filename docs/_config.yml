@@ -1,0 +1,4 @@
+title: Open Mission Control
+description: A real-time satellite ground-control platform — Rust/Axum backend, TimescaleDB, NATS JetStream, and a Next.js mission-ops dashboard.
+theme: jekyll-theme-cayman
+show_downloads: false

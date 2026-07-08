@@ -34,3 +34,19 @@
   * **Resolution**: Ran the client socket test on `http://example.com`, which has no strict CSP policy.
   * **Embedded Target Compilation Mismatch**: The Rust compiler threw `can't find crate for std` targeting RISC-V because of a global target override.
   * **Resolution**: Created a local `.cargo/config.toml` file to force compiling for `x86_64-pc-windows-msvc`.
+
+## Milestone 6: gRPC Ingestion, TimescaleDB Hypertables, NATS JetStream, Prometheus/Grafana
+* **Deliverable**: Dual gRPC/HTTP telemetry ingestion, TimescaleDB hypertable + compression policy, NATS JetStream replay fan-out alongside Redis Pub/Sub, Prometheus metrics + Grafana dashboards.
+* See [docs/CASE_STUDY.md](docs/CASE_STUDY.md) and [docs/adr/](docs/adr/) for the reasoning behind these choices in detail.
+
+## Milestone 7: Production Hardening — Auth, Observability, Resilience, Physics, Testing
+* **Deliverable**: RBAC (operator/admin roles) with refresh-token rotation and reuse-chain revocation, immutable audit logging, OpenAPI/Swagger docs, layered TOML+env configuration, `/live`/`/ready` health probes, per-IP rate limiting, a hand-rolled circuit breaker around the Redis/NATS publish paths, a physically-grounded rewrite of the simulator (vis-viva orbital velocity, radiative thermal balance, cosine solar law, simulated packet loss/GPS drift), OpenTelemetry tracing into a local Jaeger instance, a k6 load test, a real end-to-end integration test (`backend/tests/e2e_pipeline.rs`), and Dockerfiles/`docker-compose.prod.yml` for a single-command containerized boot.
+* **Problems Faced**:
+  * **Toolchain corruption**: `rustc` was missing from the active rustup toolchain entirely (reinstalling just the `rustc` component left it version-mismatched against cached `std`/`test` rlibs, producing `found crate 'std' compiled by an incompatible version of rustc`).
+  * **Resolution**: `rustup toolchain uninstall stable && rustup toolchain install stable` for a fully consistent reinstall.
+  * **`tracing::Span` guard held across `.await`**: Wrapping telemetry ingestion in `tracing::info_span!(...).entered()` and holding the guard across `.await` points made the handler's future non-`Send`, which axum's `Handler` trait requires — surfaced as an opaque "future cannot be sent between threads safely" error pointing at an unrelated line.
+  * **Resolution**: Wrapped the handler body in `async move { ... }.instrument(span).await` instead of holding an `EnteredSpan` guard across await points.
+  * **Unbounded NATS JetStream replay**: The WebSocket handler's consumer uses `DeliverPolicy::All` so a client connecting mid-mission still sees recent telemetry — but with no retention policy on the stream, it had been accumulating messages across every dev/test session for days, so every *new* dashboard connection replayed the entire backlog before reaching live data (visible as dozens of duplicate stale event-log entries flooding in on connect).
+  * **Resolution**: Added a `max_age` retention policy to the JetStream stream config, applied via `update_stream` (not just `get_or_create_stream`) so it also corrects a stream that already existed before the policy was introduced.
+  * **`utoipa-swagger-ui` Docker build failure**: Its build script shells out to the system `curl` binary to download Swagger UI's static assets at compile time — failed with an opaque panic (`Os { code: 2, kind: NotFound }`) on the `rust:1-slim-bookworm` builder image, which doesn't include `curl`.
+  * **Resolution**: Added `curl` and `ca-certificates` to the builder stage's `apt-get install`.

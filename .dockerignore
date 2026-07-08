@@ -1,0 +1,6 @@
+target
+node_modules
+.next
+.git
+*.log
+simulator_config.json

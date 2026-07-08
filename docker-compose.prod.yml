@@ -1,0 +1,142 @@
+# Full containerized stack — single-command boot of literally everything, including the
+# backend/simulator/frontend (unlike docker-compose.yml, which only runs the data-plane
+# services and expects backend/simulator/frontend to be run manually via `cargo run`/`npm run dev`).
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up --build
+#
+# Dashboard:  http://localhost:3000
+# Backend:    http://localhost:8081
+# Swagger UI: http://localhost:8081/swagger-ui
+# Jaeger UI:  http://localhost:16686
+# Grafana:    http://localhost:3001
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: omc-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: omc
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d omc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.0-alpine
+    container_name: omc-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: omc-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: "-js -m 8222"
+    healthcheck:
+      test: ["CMD", "nats-server", "-sl"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: omc-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: omc-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: omc-jaeger
+    ports:
+      - "4317:4317"
+      - "16686:16686"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: omc-backend
+    ports:
+      - "8081:8081"
+      - "50051:50051"
+    environment:
+      DATABASE_URL: postgresql://postgres:password123@postgres:5432/omc
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8081
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: 50051
+      JWT_SECRET: mission_control_default_secret_key_12345
+      APP_ENV: production
+      APP__OTEL__OTLP_ENDPOINT: http://jaeger:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  simulator:
+    build:
+      context: .
+      dockerfile: simulator/Dockerfile
+    container_name: omc-simulator
+    environment:
+      REDIS_URL: redis://redis:6379
+      GRPC_URL: http://backend:50051
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8081
+        NEXT_PUBLIC_WS_URL: ws://localhost:8081
+    container_name: omc-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

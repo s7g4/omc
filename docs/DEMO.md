@@ -1,3 +1,8 @@
+---
+title: Demo Walkthrough
+layout: default
+---
+
 # Demo Walkthrough
 
 Two ways to run this: the full containerized stack (one command, closest to "production"), or
