@@ -71,16 +71,28 @@ async fn main() {
         .await
         .expect("Failed to connect to NATS");
 
-    // Configure NATS JetStream
+    // Configure NATS JetStream. `max_age` bounds the replay window: the WebSocket handler's
+    // consumer uses `DeliverPolicy::All` (see websockets/handler.rs) so a client connecting
+    // mid-mission still sees recent telemetry, but without a retention policy the stream would
+    // grow forever and every new connection would replay the *entire* history since the stream
+    // was created — flooding fresh dashboard sessions with stale data instead of catching them
+    // up. `update_stream` (not just `get_or_create_stream`) is used so this also takes effect
+    // on a stream that already existed from before this policy was added.
     let jetstream = async_nats::jetstream::new(nats_client.clone());
+    let stream_config = async_nats::jetstream::stream::Config {
+        name: "TELEMETRY_STREAM".to_string(),
+        subjects: vec!["telemetry.>".to_string()],
+        max_age: std::time::Duration::from_secs(600),
+        ..Default::default()
+    };
     jetstream
-        .get_or_create_stream(async_nats::jetstream::stream::Config {
-            name: "TELEMETRY_STREAM".to_string(),
-            subjects: vec!["telemetry.>".to_string()],
-            ..Default::default()
-        })
+        .get_or_create_stream(stream_config.clone())
         .await
         .expect("Failed to create NATS JetStream stream");
+    jetstream
+        .update_stream(stream_config)
+        .await
+        .expect("Failed to update NATS JetStream stream retention policy");
 
     let redis_breaker = Arc::new(CircuitBreaker::new(
         settings.circuit_breaker.failure_threshold,
