@@ -1,9 +1,10 @@
 #![allow(dead_code)]
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, ToSchema)]
 pub struct Telemetry {
     pub id: i64,
     pub satellite_id: Uuid,
@@ -17,7 +18,7 @@ pub struct Telemetry {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct CreateTelemetry {
     pub satellite_id: Uuid,
     pub battery_level: f64,

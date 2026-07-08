@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, ToSchema)]
 pub struct Mission {
     pub id: Uuid,
     pub name: String,
@@ -12,7 +13,7 @@ pub struct Mission {
     pub start_date: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateMissionRequest {
     pub name: String,
     pub status: String,
@@ -20,14 +21,14 @@ pub struct CreateMissionRequest {
     pub satellite_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateMissionRequest {
     pub name: Option<String>,
     pub status: Option<String>,
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AssignSatelliteRequest {
     pub satellite_id: Uuid,
 }

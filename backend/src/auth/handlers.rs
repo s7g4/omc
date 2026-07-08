@@ -15,6 +15,16 @@ use uuid::Uuid;
 const ACCESS_TOKEN_TTL_HOURS: i64 = 1;
 const REFRESH_TOKEN_TTL_DAYS: i64 = 7;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "User registered", body = AuthResponse),
+        (status = 409, description = "Username already taken")
+    ),
+    tag = "auth"
+)]
 pub async fn register_user(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
@@ -75,6 +85,16 @@ pub async fn register_user(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Authenticated", body = AuthResponse),
+        (status = 401, description = "Invalid credentials")
+    ),
+    tag = "auth"
+)]
 pub async fn login_user(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
@@ -127,6 +147,16 @@ pub async fn login_user(
 /// Exchanges a still-valid refresh token for a new access+refresh pair, rotating the old one.
 /// If the presented token was already rotated (i.e. reused), the entire descendant chain is
 /// revoked on the assumption that the token has been stolen/replayed.
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    request_body = RefreshRequest,
+    responses(
+        (status = 200, description = "New access/refresh pair issued", body = AuthResponse),
+        (status = 401, description = "Unknown, expired, or reused refresh token")
+    ),
+    tag = "auth"
+)]
 pub async fn refresh_token(
     State(state): State<AppState>,
     Json(payload): Json<RefreshRequest>,
@@ -198,6 +228,13 @@ pub async fn refresh_token(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    request_body = LogoutRequest,
+    responses((status = 204, description = "Refresh token revoked")),
+    tag = "auth"
+)]
 pub async fn logout_user(
     State(state): State<AppState>,
     Json(payload): Json<LogoutRequest>,

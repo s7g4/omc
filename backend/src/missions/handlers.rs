@@ -9,6 +9,14 @@ use axum::{
 };
 use uuid::Uuid;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/missions",
+    request_body = CreateMissionRequest,
+    responses((status = 201, description = "Mission created", body = Mission)),
+    tag = "missions",
+    security(("bearer_auth" = []))
+)]
 pub async fn create_mission(
     _claims: Claims, // Require authentication
     State(state): State<AppState>,
@@ -60,6 +68,13 @@ pub async fn create_mission(
     Ok((StatusCode::CREATED, Json(mission)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/missions",
+    responses((status = 200, description = "List missions", body = [Mission])),
+    tag = "missions",
+    security(("bearer_auth" = []))
+)]
 pub async fn list_missions(
     _claims: Claims, // Require authentication
     State(state): State<AppState>,
@@ -144,6 +159,17 @@ pub async fn update_mission(
     Ok(Json(updated))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/missions/{id}",
+    params(("id" = Uuid, Path, description = "Mission id")),
+    responses(
+        (status = 204, description = "Mission deleted"),
+        (status = 403, description = "Admin role required")
+    ),
+    tag = "missions",
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_mission(
     _claims: AdminClaims, // Require admin role
     Path(id): Path<Uuid>,

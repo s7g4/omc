@@ -1,4 +1,6 @@
 use crate::telemetry::models::CreateTelemetry;
+#[allow(unused_imports)]
+use crate::telemetry::models::Telemetry;
 use crate::telemetry::repository::TelemetryRepository;
 use crate::AppState;
 use axum::{
@@ -9,6 +11,16 @@ use axum::{
 };
 use redis::AsyncCommands;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/telemetry",
+    request_body = CreateTelemetry,
+    responses(
+        (status = 201, description = "Telemetry ingested", body = Telemetry),
+        (status = 400, description = "Invalid payload")
+    ),
+    tag = "telemetry"
+)]
 pub async fn ingest_telemetry(
     State(state): State<AppState>,
     Json(payload): Json<CreateTelemetry>,
@@ -88,7 +100,7 @@ pub async fn ingest_telemetry(
     (StatusCode::CREATED, Json(telemetry)).into_response()
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, utoipa::ToSchema)]
 pub struct InjectFaultRequest {
     pub satellite_id: uuid::Uuid,
     pub fault: Option<String>,
@@ -110,6 +122,14 @@ struct WsEventMsg {
     timestamp: String,
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/simulator/inject",
+    request_body = InjectFaultRequest,
+    responses((status = 202, description = "Fault override requested")),
+    tag = "telemetry",
+    security(("bearer_auth" = []))
+)]
 pub async fn inject_fault(
     State(state): State<AppState>,
     _claims: crate::auth::models::Claims,

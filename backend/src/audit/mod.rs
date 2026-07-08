@@ -22,6 +22,13 @@ pub struct ListAuditLogsParams {
 
 /// Admin-only: browse the immutable audit trail. Demonstrates that `audit_log_layer` below is
 /// actually populating `audit_logs`, not just writing to a table nothing ever reads.
+#[utoipa::path(
+    get,
+    path = "/api/v1/audit-logs",
+    responses((status = 200, description = "Recent audit log entries", body = [models::AuditLog])),
+    tag = "audit",
+    security(("bearer_auth" = []))
+)]
 pub async fn list_audit_logs(
     _claims: AdminClaims,
     State(state): State<AppState>,

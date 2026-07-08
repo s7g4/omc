@@ -5,6 +5,8 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 mod audit;
 mod auth;
@@ -12,6 +14,7 @@ mod db;
 mod health;
 mod metrics;
 mod missions;
+mod openapi;
 mod settings;
 mod telemetry;
 mod websockets;
@@ -134,6 +137,9 @@ async fn main() {
         .route("/live", get(health::live))
         .route("/ready", get(health::ready))
         .route("/metrics", get(metrics::metrics_handler))
+        .merge(
+            SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi::ApiDoc::openapi()),
+        )
         .nest("/api/v1", api_routes)
         .layer(cors)
         .with_state(state.clone());
