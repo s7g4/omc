@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod audit;
 mod auth;
 mod db;
 mod health;
@@ -108,7 +109,12 @@ async fn main() {
             post(missions::handlers::unassign_satellite),
         )
         .route("/simulator/inject", post(telemetry::handlers::inject_fault))
-        .route_layer(axum::middleware::from_fn(metrics::track_metrics));
+        .route("/audit-logs", get(audit::list_audit_logs))
+        .route_layer(axum::middleware::from_fn(metrics::track_metrics))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            audit::audit_log_layer,
+        ));
 
     let cors = tower_http::cors::CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
@@ -161,7 +167,12 @@ async fn main() {
     tracing::info!("Starting server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
 
 async fn health_check() -> &'static str {
