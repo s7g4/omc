@@ -10,6 +10,7 @@ import SimControl from "@/components/SimControl";
 import MissionsOverview, { Mission } from "@/components/MissionsOverview";
 import AuthScreen from "@/components/AuthScreen";
 import { Database, Cpu, Network, HelpCircle, Terminal, Loader2 } from "lucide-react";
+import { API_URL, WS_URL } from "@/lib/config";
 
 // Static definitions of Satellites
 const SATELLITES = [
@@ -169,7 +170,7 @@ export default function Home() {
     let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const connectWS = () => {
-      ws = new WebSocket(`ws://localhost:8081/api/v1/telemetry/ws?satellite_id=${selectedSatellite}`);
+      ws = new WebSocket(`${WS_URL}/api/v1/telemetry/ws?satellite_id=${selectedSatellite}`);
 
       ws.onopen = () => {
         setIsWebSocketConnected(true);
@@ -247,7 +248,7 @@ export default function Home() {
 
     const fetchMissions = async () => {
       try {
-        const response = await fetch("http://localhost:8081/api/v1/missions", {
+        const response = await fetch(`${API_URL}/api/v1/missions`, {
           headers: {
             "Authorization": `Bearer ${token}`
           }
@@ -280,7 +281,7 @@ export default function Home() {
 
     const fetchHistory = async () => {
       try {
-        const response = await fetch(`http://localhost:8081/api/v1/telemetry/${selectedSatellite}/history?bucket=10&limit=30`, {
+        const response = await fetch(`${API_URL}/api/v1/telemetry/${selectedSatellite}/history?bucket=10&limit=30`, {
           headers: {
             "Authorization": `Bearer ${token}`
           }
@@ -411,7 +412,7 @@ export default function Home() {
     // If backend is active, dispatch payload with authorization header
     if (isWebSocketConnected) {
       try {
-        await fetch("http://localhost:8081/api/v1/simulator/inject", {
+        await fetch(`${API_URL}/api/v1/simulator/inject`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
@@ -434,7 +435,7 @@ export default function Home() {
     // If backend is active, dispatch payload with authorization header
     if (isWebSocketConnected) {
       try {
-        await fetch("http://localhost:8081/api/v1/simulator/inject", {
+        await fetch(`${API_URL}/api/v1/simulator/inject`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
@@ -452,7 +453,7 @@ export default function Home() {
   const handleCreateMission = async (name: string, description: string, satelliteId: string | null) => {
     if (token) {
       try {
-        const response = await fetch("http://localhost:8081/api/v1/missions", {
+        const response = await fetch(`${API_URL}/api/v1/missions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -505,7 +506,7 @@ export default function Home() {
     const m = missions.find(mission => mission.id === id);
     if (token && id.length === 36) { // database UUID has 36 characters
       try {
-        const response = await fetch(`http://localhost:8081/api/v1/missions/${id}`, {
+        const response = await fetch(`${API_URL}/api/v1/missions/${id}`, {
           method: "DELETE",
           headers: {
             "Authorization": `Bearer ${token}`

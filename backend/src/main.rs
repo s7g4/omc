@@ -119,9 +119,13 @@ async fn main() {
         .with_state(state.clone());
 
     // Start gRPC Ingestion Server in the background
+    let grpc_host = std::env::var("GRPC_HOST").unwrap_or_else(|_| "[::1]".to_string());
+    let grpc_port = std::env::var("GRPC_PORT").unwrap_or_else(|_| "50051".to_string());
     let grpc_state = state.clone();
     tokio::spawn(async move {
-        let addr = "[::1]:50051".parse().unwrap();
+        let addr = format!("{}:{}", grpc_host, grpc_port)
+            .parse()
+            .expect("Invalid GRPC_HOST/GRPC_PORT");
         let telemetry_service = telemetry::grpc::MyTelemetryIngest::new(grpc_state);
 
         tracing::info!("Starting gRPC server on {}", addr);
@@ -135,7 +139,11 @@ async fn main() {
             .unwrap();
     });
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8081));
+    let http_host = std::env::var("HTTP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let http_port = std::env::var("HTTP_PORT").unwrap_or_else(|_| "8081".to_string());
+    let addr: SocketAddr = format!("{}:{}", http_host, http_port)
+        .parse()
+        .expect("Invalid HTTP_HOST/HTTP_PORT");
     tracing::info!("Starting server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

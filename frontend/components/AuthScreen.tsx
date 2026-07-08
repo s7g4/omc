@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Radio, Shield, KeyRound, User, ChevronRight, AlertCircle, Loader2 } from "lucide-react";
+import { API_URL } from "@/lib/config";
 
 interface AuthScreenProps {
   onAuthSuccess: (token: string, username: string) => void;
@@ -24,8 +25,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     const endpoint = isLogin ? "/api/v1/auth/login" : "/api/v1/auth/register";
     
     try {
-      // Connect to the Axum backend on port 8081
-      const response = await fetch(`http://localhost:8081${endpoint}`, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
