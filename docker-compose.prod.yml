@@ -10,6 +10,10 @@
 # Swagger UI: http://localhost:8081/swagger-ui
 # Jaeger UI:  http://localhost:16686
 # Grafana:    http://localhost:3001
+#
+# The Postgres password and JWT_SECRET below are local-only placeholders (same ones used in
+# docker-compose.yml for manual dev) — replace both before running this anywhere reachable
+# beyond localhost.
 
 services:
   postgres:

@@ -1,8 +1,13 @@
 # Open Mission Control
 
+[![CI](https://github.com/s7g4/omc/actions/workflows/ci.yml/badge.svg)](https://github.com/s7g4/omc/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A real-time satellite ground-control platform: a Rust/Axum backend that ingests telemetry over gRPC, stores it in a TimescaleDB hypertable, fans it out over Redis pub/sub and NATS JetStream, and serves it to a Next.js mission-ops dashboard over WebSockets.
 
-📖 [Browse the docs site](https://s7g4.github.io/omc/) · ![Open Mission Control demo](docs/demo.gif)
+[Docs site](https://s7g4.github.io/omc/)
+
+![Open Mission Control demo](docs/demo.gif)
 
 ---
 
