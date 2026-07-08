@@ -5,6 +5,7 @@ use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
+mod communication;
 mod config;
 mod physics;
 
@@ -28,6 +29,9 @@ struct SimulatorControlMsg {
 async fn main() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .init();
 
     tracing::info!("Initializing Satellite Simulator...");
@@ -98,6 +102,7 @@ async fn main() {
     });
 
     let mut state = physics::SatelliteState::new();
+    let mut comms = communication::channel::CommsChannel::new();
     let tick_duration = Duration::from_millis(config.tick_interval_ms);
 
     let grpc_addr = std::env::var("GRPC_URL").unwrap_or_else(|_| "http://[::1]:50051".to_string());
@@ -113,6 +118,7 @@ async fn main() {
         };
 
         state.tick(current_fault.as_deref());
+        comms.tick(state.altitude, &mut rand::thread_rng());
 
         // Establish / retry gRPC client connection
         if grpc_client.is_none() {
@@ -127,7 +133,19 @@ async fn main() {
             }
         }
 
+        if comms.should_drop_packet(&mut rand::thread_rng()) {
+            tracing::warn!(
+                "Simulated packet drop (SNR {:.1}dB) | Lat: {:+.4}, Lon: {:+.4}",
+                comms.snr_db,
+                state.latitude,
+                state.longitude
+            );
+            tokio::time::sleep(tick_duration).await;
+            continue;
+        }
+
         if let Some(ref mut client) = grpc_client {
+            let (tx_lat, tx_lon) = comms.apply_gps_drift(state.latitude, state.longitude);
             let request = tonic::Request::new(TelemetryRequest {
                 satellite_id: config.satellite_id.to_string(),
                 battery_level: state.battery_level,
@@ -135,17 +153,18 @@ async fn main() {
                 solar_power: state.solar_power,
                 velocity: state.velocity,
                 altitude: state.altitude,
-                latitude: state.latitude,
-                longitude: state.longitude,
+                latitude: tx_lat,
+                longitude: tx_lon,
             });
 
             match client.ingest_telemetry(request).await {
                 Ok(response) => {
                     let resp = response.into_inner();
                     tracing::info!(
-                        "Telemetry sent over gRPC | Lat: {:+.4}, Lon: {:+.4} | Overrides: {:?} | Status: {} {}",
-                        state.latitude,
-                        state.longitude,
+                        "Telemetry sent over gRPC | Lat: {:+.4}, Lon: {:+.4} | SNR: {:.1}dB | Overrides: {:?} | Status: {} {}",
+                        tx_lat,
+                        tx_lon,
+                        comms.snr_db,
                         current_fault,
                         resp.status,
                         resp.message
