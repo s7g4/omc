@@ -80,6 +80,7 @@ async fn wait_for_health() {
 }
 
 #[tokio::test]
+#[ignore = "requires docker compose services (postgres/redis/nats); run via CI's integration-tests job or `cargo test -- --ignored`"]
 async fn telemetry_flows_from_grpc_through_db_and_nats_to_websocket() {
     let _backend = spawn_backend();
     wait_for_health().await;
