@@ -15,6 +15,7 @@ mod db;
 mod health;
 mod metrics;
 mod missions;
+mod observability;
 mod openapi;
 mod resilience;
 mod settings;
@@ -39,8 +40,10 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     let settings = Arc::new(Settings::load().expect("Failed to load layered configuration"));
+    let otel_layer = observability::init_tracer(&settings);
 
     tracing_subscriber::registry()
+        .with(otel_layer)
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::EnvFilter::new(&settings.logging.level))
         .init();

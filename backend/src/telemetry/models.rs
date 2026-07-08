@@ -18,6 +18,24 @@ pub struct Telemetry {
     pub created_at: DateTime<Utc>,
 }
 
+impl Telemetry {
+    /// JSON payload published to NATS, tagged with a per-request trace id so the same id
+    /// shows up in the OTEL span, this message, and the audit log entry for the ingest call —
+    /// a lightweight stand-in for full W3C trace-context propagation through gRPC/NATS.
+    pub fn to_traced_json(&self, trace_id: Uuid) -> Result<String, serde_json::Error> {
+        #[derive(Serialize)]
+        struct TracedTelemetry<'a> {
+            #[serde(flatten)]
+            telemetry: &'a Telemetry,
+            trace_id: Uuid,
+        }
+        serde_json::to_string(&TracedTelemetry {
+            telemetry: self,
+            trace_id,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct CreateTelemetry {
     pub satellite_id: Uuid,

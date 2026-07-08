@@ -10,6 +10,7 @@ use axum::{
     Json,
 };
 use redis::AsyncCommands;
+use tracing::Instrument;
 
 #[utoipa::path(
     post,
@@ -25,87 +26,94 @@ pub async fn ingest_telemetry(
     State(state): State<AppState>,
     Json(payload): Json<CreateTelemetry>,
 ) -> impl IntoResponse {
-    // 1. Data Validation
-    if payload.battery_level < 0.0 || payload.battery_level > 100.0 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid battery level (must be 0-100)",
-        )
-            .into_response();
-    }
-    if payload.latitude < -90.0 || payload.latitude > 90.0 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid latitude (must be -90 to 90)",
-        )
-            .into_response();
-    }
-    if payload.longitude < -180.0 || payload.longitude > 180.0 {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid longitude (must be -180 to 180)",
-        )
-            .into_response();
-    }
+    let trace_id = uuid::Uuid::new_v4();
+    let span = tracing::info_span!("telemetry_ingest", %trace_id, satellite_id = %payload.satellite_id, transport = "http");
 
-    // 2. Ensure Satellite Exists (Upsert pattern)
-    let sat_name = format!("SAT-{}", &payload.satellite_id.to_string()[..8]);
+    async move {
+        // 1. Data Validation
+        if payload.battery_level < 0.0 || payload.battery_level > 100.0 {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Invalid battery level (must be 0-100)",
+            )
+                .into_response();
+        }
+        if payload.latitude < -90.0 || payload.latitude > 90.0 {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Invalid latitude (must be -90 to 90)",
+            )
+                .into_response();
+        }
+        if payload.longitude < -180.0 || payload.longitude > 180.0 {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Invalid longitude (must be -180 to 180)",
+            )
+                .into_response();
+        }
 
-    let upsert_sat = sqlx::query!(
-        r#"
+        // 2. Ensure Satellite Exists (Upsert pattern)
+        let sat_name = format!("SAT-{}", &payload.satellite_id.to_string()[..8]);
+
+        let upsert_sat = sqlx::query!(
+            r#"
         INSERT INTO satellites (id, name, status)
         VALUES ($1, $2, 'active')
         ON CONFLICT (id) DO NOTHING
         "#,
-        payload.satellite_id,
-        sat_name
-    )
-    .execute(&state.db)
-    .await;
+            payload.satellite_id,
+            sat_name
+        )
+        .execute(&state.db)
+        .await;
 
-    if let Err(e) = upsert_sat {
-        tracing::error!("Failed to register satellite on-the-fly: {:?}", e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Database write error").into_response();
-    }
-
-    // 3. Persist Telemetry Log to PostgreSQL
-    let telemetry = match TelemetryRepository::insert(&state.db, &payload).await {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("Failed to insert telemetry record: {:?}", e);
+        if let Err(e) = upsert_sat {
+            tracing::error!("Failed to register satellite on-the-fly: {:?}", e);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Database write error").into_response();
         }
-    };
 
-    // Increment telemetry ingested counter
-    if let Some(counter) = crate::metrics::TELEMETRY_INGESTED_TOTAL.get() {
-        counter.inc();
-    }
+        // 3. Persist Telemetry Log to PostgreSQL
+        let telemetry = match TelemetryRepository::insert(&state.db, &payload).await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::error!("Failed to insert telemetry record: {:?}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Database write error").into_response();
+            }
+        };
 
-    // 4. Publish to NATS JetStream for Real-Time Streaming (circuit-broken: skip if NATS
-    // has been failing repeatedly rather than piling up hung publish attempts).
-    if !state.nats_breaker.allow_request() {
-        tracing::warn!("NATS circuit breaker open; skipping publish for this tick");
-        return (StatusCode::CREATED, Json(telemetry)).into_response();
-    }
-
-    if let Ok(serialized) = serde_json::to_string(&telemetry) {
-        let subject = format!("telemetry.{}", telemetry.satellite_id);
-        let publish_result = state.nats.publish(subject, serialized.into()).await;
-
-        if let Err(e) = publish_result {
-            state.nats_breaker.record_failure();
-            tracing::error!("Failed to publish telemetry to NATS JetStream: {:?}", e);
-        } else {
-            state.nats_breaker.record_success();
-            tracing::debug!(
-                "Telemetry published to NATS JetStream subject 'telemetry.{}'",
-                telemetry.satellite_id
-            );
+        // Increment telemetry ingested counter
+        if let Some(counter) = crate::metrics::TELEMETRY_INGESTED_TOTAL.get() {
+            counter.inc();
         }
-    }
 
-    (StatusCode::CREATED, Json(telemetry)).into_response()
+        // 4. Publish to NATS JetStream for Real-Time Streaming (circuit-broken: skip if NATS
+        // has been failing repeatedly rather than piling up hung publish attempts).
+        if !state.nats_breaker.allow_request() {
+            tracing::warn!("NATS circuit breaker open; skipping publish for this tick");
+            return (StatusCode::CREATED, Json(telemetry)).into_response();
+        }
+
+        if let Ok(serialized) = telemetry.to_traced_json(trace_id) {
+            let subject = format!("telemetry.{}", telemetry.satellite_id);
+            let publish_result = state.nats.publish(subject, serialized.into()).await;
+
+            if let Err(e) = publish_result {
+                state.nats_breaker.record_failure();
+                tracing::error!("Failed to publish telemetry to NATS JetStream: {:?}", e);
+            } else {
+                state.nats_breaker.record_success();
+                tracing::debug!(
+                    "Telemetry published to NATS JetStream subject 'telemetry.{}'",
+                    telemetry.satellite_id
+                );
+            }
+        }
+
+        (StatusCode::CREATED, Json(telemetry)).into_response()
+    }
+    .instrument(span)
+    .await
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]

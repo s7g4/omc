@@ -65,6 +65,15 @@ services:
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: omc-jaeger
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver (backend's otel.otlp_endpoint target)
+      - "16686:16686" # Jaeger UI
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
 volumes:
   postgres_data:
   redis_data:
