@@ -30,6 +30,9 @@ tower-http = { version = "0.5", features = ["cors"] }
 tonic = "0.12"
 prost = "0.13"
 config = "0.14"
+sha2 = "0.10"
+rand = "0.8"
+hex = "0.4"
 
 [build-dependencies]
 tonic-build = "0.12"

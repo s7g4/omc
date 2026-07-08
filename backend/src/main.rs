@@ -87,6 +87,8 @@ async fn main() {
         .route("/telemetry/ws", get(websockets::handler::ws_handler))
         .route("/auth/register", post(auth::handlers::register_user))
         .route("/auth/login", post(auth::handlers::login_user))
+        .route("/auth/refresh", post(auth::handlers::refresh_token))
+        .route("/auth/logout", post(auth::handlers::logout_user))
         .route(
             "/missions",
             get(missions::handlers::list_missions).post(missions::handlers::create_mission),

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, username, password_hash, created_at FROM users WHERE username = $1",
+  "query": "SELECT id, username, password_hash, role, created_at FROM users WHERE username = $1",
   "describe": {
     "columns": [
       {
@@ -20,6 +20,11 @@
       },
       {
         "ordinal": 3,
+        "name": "role",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -33,8 +38,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "0a24797390d0ed9db10a1a45722e785940145d0ded7bf7af1a281371afb05442"
+  "hash": "8fa43d3c8e24b00283a6cd8eac1885660b7284f0274efbd420ca2ef6e4863bb8"
 }

@@ -1,4 +1,5 @@
 use super::models::{AssignSatelliteRequest, CreateMissionRequest, Mission, UpdateMissionRequest};
+use crate::auth::middleware::AdminClaims;
 use crate::auth::models::Claims;
 use crate::AppState;
 use axum::{
@@ -144,7 +145,7 @@ pub async fn update_mission(
 }
 
 pub async fn delete_mission(
-    _claims: Claims, // Require authentication
+    _claims: AdminClaims, // Require admin role
     Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<StatusCode, (StatusCode, &'static str)> {
@@ -207,7 +208,7 @@ pub async fn assign_satellite(
 }
 
 pub async fn unassign_satellite(
-    _claims: Claims, // Require authentication
+    _claims: AdminClaims, // Require admin role
     Path(mission_id): Path<Uuid>,
     State(state): State<AppState>,
     Json(payload): Json<AssignSatelliteRequest>,

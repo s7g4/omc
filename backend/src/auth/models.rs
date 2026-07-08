@@ -7,6 +7,7 @@ pub struct User {
     pub id: Uuid,
     pub username: String,
     pub password_hash: String,
+    pub role: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -25,12 +26,25 @@ pub struct LoginRequest {
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
+    pub refresh_token: String,
     pub username: String,
+    pub role: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // User ID (UUID)
     pub username: String,
+    pub role: String,
     pub exp: usize, // Expiration timestamp
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LogoutRequest {
+    pub refresh_token: String,
 }
