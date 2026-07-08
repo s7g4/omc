@@ -3,28 +3,37 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod auth;
 mod db;
+mod health;
 mod metrics;
 mod missions;
+mod settings;
 mod telemetry;
 mod websockets;
+
+use settings::Settings;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::PgPool,
     pub redis: redis::Client,
     pub nats: async_nats::Client,
+    pub settings: Arc<Settings>,
 }
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
 
+    let settings = Arc::new(Settings::load().expect("Failed to load layered configuration"));
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::EnvFilter::new(&settings.logging.level))
         .init();
 
     // Initialize metrics collectors
@@ -66,6 +75,7 @@ async fn main() {
         db: pool,
         redis: redis_client,
         nats: nats_client,
+        settings: settings.clone(),
     };
 
     let api_routes = Router::new()
@@ -113,6 +123,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/live", get(health::live))
+        .route("/ready", get(health::ready))
         .route("/metrics", get(metrics::metrics_handler))
         .nest("/api/v1", api_routes)
         .layer(cors)

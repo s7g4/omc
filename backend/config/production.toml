@@ -1,0 +1,9 @@
+[logging]
+level = "warn"
+
+[cors]
+allowed_origins = ["http://localhost:3000"]
+
+[rate_limit]
+burst_size = 10
+replenish_per_second = 1
