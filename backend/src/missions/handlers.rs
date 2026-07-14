@@ -3,7 +3,7 @@ use crate::auth::middleware::AdminClaims;
 use crate::auth::models::Claims;
 use crate::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -68,9 +68,15 @@ pub async fn create_mission(
     Ok((StatusCode::CREATED, Json(mission)))
 }
 
+#[derive(serde::Deserialize)]
+pub struct ListMissionsParams {
+    pub limit: Option<i64>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/missions",
+    params(("limit" = Option<i64>, Query, description = "Max rows to return (default 100, capped at 500)")),
     responses((status = 200, description = "List missions", body = [Mission])),
     tag = "missions",
     security(("bearer_auth" = []))
@@ -78,10 +84,13 @@ pub async fn create_mission(
 pub async fn list_missions(
     _claims: Claims, // Require authentication
     State(state): State<AppState>,
+    Query(params): Query<ListMissionsParams>,
 ) -> Result<Json<Vec<Mission>>, (StatusCode, &'static str)> {
+    let limit = params.limit.unwrap_or(100).clamp(1, 500);
     let list = sqlx::query_as!(
         Mission,
-        "SELECT id, name, status, description, created_at, start_date FROM missions ORDER BY created_at DESC"
+        "SELECT id, name, status, description, created_at, start_date FROM missions ORDER BY created_at DESC LIMIT $1",
+        limit
     )
     .fetch_all(&state.db)
     .await

@@ -11,7 +11,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation};
 use models::NewAuditLog;
 use std::net::SocketAddr;
 
@@ -47,25 +46,15 @@ pub async fn list_audit_logs(
 /// Best-effort decode of the bearer token for actor attribution. Never fails the request —
 /// audit logging is observability, not an auth gate (that's `Claims`/`AdminClaims`).
 fn decode_actor(req: &Request<Body>) -> (Option<uuid::Uuid>, Option<String>) {
-    let secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "mission_control_default_secret_key_12345".to_string());
-
     let claims = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .and_then(|token| {
-            decode::<crate::auth::models::Claims>(
-                token,
-                &DecodingKey::from_secret(secret.as_bytes()),
-                &Validation::default(),
-            )
-            .ok()
-        });
+        .and_then(crate::auth::secret::decode_claims);
 
     match claims {
-        Some(data) => (data.claims.sub.parse().ok(), Some(data.claims.username)),
+        Some(claims) => (claims.sub.parse().ok(), Some(claims.username)),
         None => (None, None),
     }
 }

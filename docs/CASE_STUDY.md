@@ -98,6 +98,26 @@ publish is broken, or vice versa) — testing both closes exactly the gap the pr
 flagged as the main risk: individually-working components that were never proven to work
 *together*.
 
+## Migrations are one-way
+
+`sqlx::migrate!` (`backend/src/db.rs`) applies migrations linearly and has no built-in "down"
+step. That's fine for this project's lifecycle — schema changes are additive and there's no
+production data to protect a rollback path for — but it's worth being explicit that the recovery
+story for a bad migration here is "restore from a backup," not "migrate down," since sqlx doesn't
+support reversible migrations without hand-writing a parallel set of down-scripts this project
+doesn't have.
+
+## A known, deliberately-unfixed `npm audit` finding
+
+`npm audit` reports a moderate PostCSS advisory, reached transitively through Next.js's own
+bundled copy (`next/node_modules/postcss`, not the top-level one Tailwind uses). `npm audit fix
+--force` "resolves" it by downgrading `next` from 16.2.9 to a `9.3.3-canary` release — a
+regression far more severe than the advisory itself, and not something the actual fix (Next.js
+bumping its bundled PostCSS upstream) requires. Applying the suggested fix here would be worse
+engineering than leaving the advisory open with this explanation attached. CI runs `npm audit
+--audit-level=high` as an informational, non-blocking step so this doesn't silently regress if a
+*new* advisory shows up that isn't this one.
+
 ## What's explicitly out of scope, and why
 
 No Kubernetes manifests, no Terraform, no HashiCorp Vault, no LLM-backed features, and no live

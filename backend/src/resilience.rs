@@ -55,3 +55,58 @@ impl CircuitBreaker {
         !self.allow_request()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    #[test]
+    fn starts_closed() {
+        let breaker = CircuitBreaker::new(3, 1);
+        assert!(breaker.allow_request());
+        assert!(!breaker.is_open());
+    }
+
+    #[test]
+    fn opens_after_reaching_failure_threshold() {
+        let breaker = CircuitBreaker::new(3, 60);
+        breaker.record_failure();
+        breaker.record_failure();
+        assert!(
+            breaker.allow_request(),
+            "should still be closed below threshold"
+        );
+
+        breaker.record_failure();
+        assert!(breaker.is_open(), "should open once threshold is reached");
+    }
+
+    #[test]
+    fn success_resets_failure_count() {
+        let breaker = CircuitBreaker::new(3, 60);
+        breaker.record_failure();
+        breaker.record_failure();
+        breaker.record_success();
+        breaker.record_failure();
+        breaker.record_failure();
+        assert!(
+            breaker.allow_request(),
+            "a success should reset the count, so two more failures shouldn't reopen it"
+        );
+    }
+
+    #[test]
+    fn half_opens_after_cooldown() {
+        let breaker = CircuitBreaker::new(1, 1);
+        breaker.record_failure();
+        assert!(breaker.is_open());
+
+        sleep(Duration::from_secs(2));
+        assert!(
+            breaker.allow_request(),
+            "should allow a probe request through once the cooldown has elapsed"
+        );
+    }
+}

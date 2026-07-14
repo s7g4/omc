@@ -43,9 +43,23 @@ impl TelemetryIngest for MyTelemetryIngest {
             tracing::info_span!("telemetry_ingest", %trace_id, %satellite_id, transport = "grpc");
 
         async move {
+            // Same validation as the HTTP path (telemetry/handlers.rs::ingest_telemetry) — these
+            // two ingestion paths previously diverged here (HTTP checked lat/lon too, gRPC only
+            // checked battery), which is exactly the kind of silent behavioral drift duplicated
+            // logic invites.
             if req.battery_level < 0.0 || req.battery_level > 100.0 {
                 return Err(Status::invalid_argument(
                     "Invalid battery level (must be 0-100)",
+                ));
+            }
+            if req.latitude < -90.0 || req.latitude > 90.0 {
+                return Err(Status::invalid_argument(
+                    "Invalid latitude (must be -90 to 90)",
+                ));
+            }
+            if req.longitude < -180.0 || req.longitude > 180.0 {
+                return Err(Status::invalid_argument(
+                    "Invalid longitude (must be -180 to 180)",
                 ));
             }
 

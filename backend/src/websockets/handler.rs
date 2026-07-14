@@ -1,9 +1,11 @@
+use crate::auth::secret::decode_claims;
 use crate::AppState;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
+    http::StatusCode,
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -11,14 +13,24 @@ use futures_util::{SinkExt, StreamExt};
 #[derive(serde::Deserialize)]
 pub struct WsParams {
     pub satellite_id: Option<uuid::Uuid>,
+    /// Browsers can't set custom headers on a WebSocket handshake, so the access token travels
+    /// as a query param here instead of an `Authorization` header — the same JWT issued by
+    /// `/api/v1/auth/login`, just carried differently for this one endpoint.
+    pub token: Option<String>,
 }
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(params): Query<WsParams>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state, params.satellite_id))
+) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
+    let token = params
+        .token
+        .as_deref()
+        .ok_or((StatusCode::UNAUTHORIZED, "Missing token query parameter"))?;
+    decode_claims(token).ok_or((StatusCode::UNAUTHORIZED, "Invalid or expired token"))?;
+
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state, params.satellite_id)))
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState, satellite_id: Option<uuid::Uuid>) {

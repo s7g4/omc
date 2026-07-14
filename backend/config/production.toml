@@ -7,3 +7,5 @@ allowed_origins = ["http://localhost:3000"]
 [rate_limit]
 burst_size = 10
 replenish_per_second = 1
+auth_burst_size = 3
+auth_replenish_per_second = 15

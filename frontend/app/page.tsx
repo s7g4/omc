@@ -164,13 +164,15 @@ export default function Home() {
 
   // WebSocket Connection
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !token) return;
 
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
     const connectWS = () => {
-      ws = new WebSocket(`${WS_URL}/api/v1/telemetry/ws?satellite_id=${selectedSatellite}`);
+      ws = new WebSocket(
+        `${WS_URL}/api/v1/telemetry/ws?satellite_id=${selectedSatellite}&token=${encodeURIComponent(token)}`
+      );
 
       ws.onopen = () => {
         setIsWebSocketConnected(true);
@@ -240,7 +242,7 @@ export default function Home() {
       if (ws) ws.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [selectedSatellite, isAuthenticated]);
+  }, [selectedSatellite, isAuthenticated, token]);
 
   // Load missions from backend on authentication
   useEffect(() => {

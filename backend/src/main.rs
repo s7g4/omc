@@ -48,6 +48,8 @@ async fn main() {
         .with(tracing_subscriber::EnvFilter::new(&settings.logging.level))
         .init();
 
+    auth::secret::warn_if_using_default_secret();
+
     // Initialize metrics collectors
     metrics::init_metrics();
 
@@ -113,6 +115,17 @@ async fn main() {
         nats_breaker,
     };
 
+    // Auth gets its own, stricter rate-limit bucket — separate from the general one below,
+    // which also covers high-frequency telemetry ingestion. Sharing a single bucket would mean
+    // either the limit is loose enough to make brute-forcing /auth/login cheap, or tight enough
+    // to throttle the simulator's once-a-second POSTs.
+    let auth_governor_config = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(settings.rate_limit.auth_replenish_per_second)
+            .burst_size(settings.rate_limit.auth_burst_size)
+            .finish()
+            .expect("Invalid auth rate limit configuration"),
+    );
     let governor_config = Arc::new(
         GovernorConfigBuilder::default()
             .per_second(settings.rate_limit.replenish_per_second)
@@ -121,6 +134,15 @@ async fn main() {
             .expect("Invalid rate limit configuration"),
     );
 
+    let auth_routes = Router::new()
+        .route("/register", post(auth::handlers::register_user))
+        .route("/login", post(auth::handlers::login_user))
+        .route("/refresh", post(auth::handlers::refresh_token))
+        .route("/logout", post(auth::handlers::logout_user))
+        .layer(GovernorLayer {
+            config: auth_governor_config,
+        });
+
     let api_routes = Router::new()
         .route("/telemetry", post(telemetry::handlers::ingest_telemetry))
         .route(
@@ -128,10 +150,7 @@ async fn main() {
             get(telemetry::handlers::get_history),
         )
         .route("/telemetry/ws", get(websockets::handler::ws_handler))
-        .route("/auth/register", post(auth::handlers::register_user))
-        .route("/auth/login", post(auth::handlers::login_user))
-        .route("/auth/refresh", post(auth::handlers::refresh_token))
-        .route("/auth/logout", post(auth::handlers::logout_user))
+        .nest("/auth", auth_routes)
         .route(
             "/missions",
             get(missions::handlers::list_missions).post(missions::handlers::create_mission),
@@ -161,8 +180,23 @@ async fn main() {
             audit::audit_log_layer,
         ));
 
+    // `cors.allowed_origins` (base.toml/production.toml/APP__CORS__ALLOWED_ORIGINS) actually
+    // drives this layer — it used to be defined in config but silently ignored in favor of a
+    // hardcoded wildcard, which meant restricting it in production.toml had no real effect.
+    let allow_origin = if settings.cors.allowed_origins.iter().any(|o| o == "*") {
+        tower_http::cors::AllowOrigin::any()
+    } else {
+        let origins: Vec<axum::http::HeaderValue> = settings
+            .cors
+            .allowed_origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        tower_http::cors::AllowOrigin::list(origins)
+    };
+
     let cors = tower_http::cors::CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
+        .allow_origin(allow_origin)
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,

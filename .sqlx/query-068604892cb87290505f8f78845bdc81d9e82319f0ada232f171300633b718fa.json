@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, status, description, created_at, start_date FROM missions ORDER BY created_at DESC",
+  "query": "SELECT id, name, status, description, created_at, start_date FROM missions ORDER BY created_at DESC LIMIT $1",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8"
+      ]
     },
     "nullable": [
       false,
@@ -46,5 +48,5 @@
       false
     ]
   },
-  "hash": "47397a7af893369f1e733920a1cb4d6e5c2c88544f427b0463eb9b51529087cf"
+  "hash": "068604892cb87290505f8f78845bdc81d9e82319f0ada232f171300633b718fa"
 }

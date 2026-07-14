@@ -7,6 +7,8 @@
 //! `integration-tests` job, or run it locally the same way).
 
 use futures_util::StreamExt;
+use jsonwebtoken::{encode, EncodingKey, Header};
+use serde::Serialize;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
@@ -20,6 +22,32 @@ use telemetry_proto::TelemetryRequest;
 
 const HTTP_PORT: &str = "18081";
 const GRPC_PORT: &str = "15051";
+const TEST_JWT_SECRET: &str = "e2e-test-secret";
+
+/// Mirrors `backend::auth::models::Claims` — can't import it directly since `backend` is a
+/// binary crate with no lib target, so this test constructs the same JSON shape by hand.
+#[derive(Serialize)]
+struct TestClaims {
+    sub: String,
+    username: String,
+    role: String,
+    exp: usize,
+}
+
+fn mint_test_token() -> String {
+    let claims = TestClaims {
+        sub: Uuid::new_v4().to_string(),
+        username: "e2e_test".to_string(),
+        role: "operator".to_string(),
+        exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
+    )
+    .expect("failed to mint test JWT")
+}
 
 /// Kills the backend subprocess on drop so a failing assertion (which unwinds past the
 /// `Child` before we get to call `.kill()` manually) doesn't leak an orphaned server.
@@ -89,9 +117,13 @@ async fn telemetry_flows_from_grpc_through_db_and_nats_to_websocket() {
 
     // 1. Open the WebSocket first (NATS JetStream's DeliverPolicy::All means order doesn't
     // actually matter for delivery, but connecting first is the more realistic ordering and
-    // keeps this test honest about what a real dashboard session does).
-    let ws_url =
-        format!("ws://127.0.0.1:{HTTP_PORT}/api/v1/telemetry/ws?satellite_id={satellite_id}");
+    // keeps this test honest about what a real dashboard session does). The endpoint requires
+    // a valid access token as a query param (browsers can't set custom headers on a WS
+    // handshake), so this also exercises that auth check rather than bypassing it.
+    let token = mint_test_token();
+    let ws_url = format!(
+        "ws://127.0.0.1:{HTTP_PORT}/api/v1/telemetry/ws?satellite_id={satellite_id}&token={token}"
+    );
     let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
         .expect("failed to open telemetry websocket");

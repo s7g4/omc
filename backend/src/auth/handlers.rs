@@ -163,12 +163,19 @@ pub async fn refresh_token(
 ) -> Result<(StatusCode, Json<AuthResponse>), (StatusCode, &'static str)> {
     let hash = hash_token(&payload.refresh_token);
 
-    let row = sqlx::query!(
+    // Atomically claim the token by revoking it IFF it hasn't been revoked yet — this is the
+    // only statement that decides whether this caller "wins" the rotation. A separate
+    // SELECT-then-UPDATE would leave a window where two concurrent requests for the same token
+    // both read revoked_at = NULL and both proceed, producing two live descendant chains from
+    // one token and defeating reuse detection. With `revoked_at IS NULL` in the WHERE clause of
+    // the UPDATE itself, only one concurrent caller can ever match; the other legitimately gets
+    // 0 rows back and is treated as a (possibly benign, e.g. a double-fired request) reuse.
+    let claimed = sqlx::query!(
         r#"
-        SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked_at, u.username, u.role
-        FROM refresh_tokens rt
-        JOIN users u ON u.id = rt.user_id
-        WHERE rt.token_hash = $1
+        UPDATE refresh_tokens
+        SET revoked_at = NOW()
+        WHERE token_hash = $1 AND revoked_at IS NULL
+        RETURNING id, user_id, expires_at
         "#,
         hash
     )
@@ -176,34 +183,50 @@ pub async fn refresh_token(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database query failure"))?;
 
-    let row = match row {
-        Some(r) => r,
-        None => return Err((StatusCode::UNAUTHORIZED, "Unknown refresh token")),
+    let claimed = match claimed {
+        Some(row) => row,
+        None => {
+            // Either the token never existed, or it did and lost the race above (reuse).
+            // Only the latter warrants revoking the rest of the chain.
+            let existing_id =
+                sqlx::query_scalar!("SELECT id FROM refresh_tokens WHERE token_hash = $1", hash)
+                    .fetch_optional(&state.db)
+                    .await
+                    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database query failure"))?;
+
+            if let Some(id) = existing_id {
+                revoke_token_chain(&state, id).await;
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    "Refresh token reuse detected; session revoked",
+                ));
+            }
+            return Err((StatusCode::UNAUTHORIZED, "Unknown refresh token"));
+        }
     };
 
-    if row.revoked_at.is_some() {
-        // Reuse of an already-rotated token: treat as compromised and revoke the chain.
-        revoke_token_chain(&state, row.id).await;
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Refresh token reuse detected; session revoked",
-        ));
-    }
-
-    if row.expires_at < chrono::Utc::now() {
+    if claimed.expires_at < chrono::Utc::now() {
         return Err((StatusCode::UNAUTHORIZED, "Refresh token expired"));
     }
 
-    let new_refresh = issue_refresh_token(&state, row.user_id).await?;
+    let user = sqlx::query!(
+        "SELECT username, role FROM users WHERE id = $1",
+        claimed.user_id
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Database query failure"))?;
+
+    let new_refresh = issue_refresh_token(&state, claimed.user_id).await?;
     let new_refresh_hash = hash_token(&new_refresh);
 
     sqlx::query!(
         r#"
         UPDATE refresh_tokens
-        SET revoked_at = NOW(), replaced_by = (SELECT id FROM refresh_tokens WHERE token_hash = $2)
+        SET replaced_by = (SELECT id FROM refresh_tokens WHERE token_hash = $2)
         WHERE id = $1
         "#,
-        row.id,
+        claimed.id,
         new_refresh_hash
     )
     .execute(&state.db)
@@ -211,19 +234,19 @@ pub async fn refresh_token(
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to rotate refresh token",
+            "Failed to link rotated refresh token",
         )
     })?;
 
-    let token = generate_jwt(&row.username, row.user_id, &row.role)?;
+    let token = generate_jwt(&user.username, claimed.user_id, &user.role)?;
 
     Ok((
         StatusCode::OK,
         Json(AuthResponse {
             token,
             refresh_token: new_refresh,
-            username: row.username,
-            role: row.role,
+            username: user.username,
+            role: user.role,
         }),
     ))
 }
@@ -316,9 +339,6 @@ fn generate_jwt(
     user_id: Uuid,
     role: &str,
 ) -> Result<String, (StatusCode, &'static str)> {
-    let secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "mission_control_default_secret_key_12345".to_string());
-
     let expiration = chrono::Utc::now() + chrono::Duration::hours(ACCESS_TOKEN_TTL_HOURS);
     let claims = Claims {
         sub: user_id.to_string(),
@@ -330,7 +350,30 @@ fn generate_jwt(
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(super::secret::jwt_secret().as_bytes()),
     )
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to encode token"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_token_is_deterministic() {
+        assert_eq!(hash_token("same-token"), hash_token("same-token"));
+    }
+
+    #[test]
+    fn hash_token_differs_for_different_inputs() {
+        assert_ne!(hash_token("token-a"), hash_token("token-b"));
+    }
+
+    #[test]
+    fn hash_token_does_not_leak_the_original() {
+        let hash = hash_token("super-secret-refresh-token");
+        assert!(!hash.contains("super-secret-refresh-token"));
+        // sha256 -> 32 bytes -> 64 hex chars
+        assert_eq!(hash.len(), 64);
+    }
 }

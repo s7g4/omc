@@ -1,10 +1,10 @@
 use super::models::Claims;
+use super::secret::decode_claims;
 use axum::{
     async_trait,
     extract::FromRequestParts,
     http::{header, request::Parts, StatusCode},
 };
-use jsonwebtoken::{decode, DecodingKey, Validation};
 
 #[async_trait]
 impl<S> FromRequestParts<S> for Claims
@@ -32,22 +32,10 @@ where
         let token = &auth_header[7..];
 
         // 3. Decode and validate
-        let secret = std::env::var("JWT_SECRET")
-            .unwrap_or_else(|_| "mission_control_default_secret_key_12345".to_string());
-
-        let token_data = decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(secret.as_bytes()),
-            &Validation::default(),
-        )
-        .map_err(|_| {
-            (
-                StatusCode::UNAUTHORIZED,
-                "Invalid or expired authorization token",
-            )
-        })?;
-
-        Ok(token_data.claims)
+        decode_claims(token).ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired authorization token",
+        ))
     }
 }
 

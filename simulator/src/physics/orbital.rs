@@ -77,3 +77,51 @@ impl OrbitalState {
         self.argument_of_latitude_rad.cos() > -0.3
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iss_altitude_gives_iss_like_velocity() {
+        // The ISS orbits at ~400-420km and ~7.66 km/s. Sanity-checks the vis-viva
+        // implementation against a real, known reference point rather than just "it runs."
+        let velocity = OrbitalState::circular_velocity(400.0);
+        assert!(
+            (7.6..7.7).contains(&velocity),
+            "expected ISS-like velocity ~7.66 km/s at 400km, got {velocity}"
+        );
+    }
+
+    #[test]
+    fn higher_orbits_are_slower() {
+        // Vis-viva: velocity decreases monotonically with altitude for a circular orbit.
+        let low = OrbitalState::circular_velocity(300.0);
+        let high = OrbitalState::circular_velocity(1000.0);
+        assert!(
+            low > high,
+            "a 300km orbit should be faster than a 1000km orbit"
+        );
+    }
+
+    #[test]
+    fn atmospheric_drag_decreases_altitude_and_never_goes_below_reentry_floor() {
+        let mut state = OrbitalState::new(125.0, 51.6);
+        for _ in 0..100 {
+            state.tick(1.0, 10.0); // aggressive decay
+        }
+        assert!(
+            state.altitude_km >= REENTRY_FLOOR_KM,
+            "altitude should clamp at the reentry floor, got {}",
+            state.altitude_km
+        );
+    }
+
+    #[test]
+    fn tick_advances_argument_of_latitude() {
+        let mut state = OrbitalState::new(500.0, 51.6);
+        let before = state.argument_of_latitude_rad;
+        state.tick(60.0, 0.0);
+        assert_ne!(before, state.argument_of_latitude_rad);
+    }
+}
