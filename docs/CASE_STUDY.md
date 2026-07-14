@@ -118,6 +118,24 @@ engineering than leaving the advisory open with this explanation attached. CI ru
 --audit-level=high` as an informational, non-blocking step so this doesn't silently regress if a
 *new* advisory shows up that isn't this one.
 
+## `cargo audit` findings: one fixed, two deferred
+
+Adding `cargo audit` to CI (in the same pass as the security fixes above) surfaced three real
+transitive advisories, not previously visible:
+
+- **RUSTSEC-2024-0437** (uncontrolled recursion in `protobuf`), pulled in by the `prometheus`
+  crate's metrics-export path. Fixed: bumping `prometheus` `0.13` -> `0.14` pulls a `protobuf`
+  version above the fixed line, with no other code changes needed — a clean, low-risk fix, so it
+  was taken immediately rather than deferred.
+- **RUSTSEC-2023-0071** (`rsa` timing side-channel) and two `rustls-webpki` CRL-parsing
+  advisories, both reached through `async-nats` `0.35.1`'s own TLS stack. The fix would mean
+  jumping `async-nats` from `0.35` to `0.49` — 14 minor versions, almost certainly with breaking
+  API changes to the JetStream consumer/stream APIs this project depends on directly
+  (`backend/src/main.rs`, `backend/src/websockets/handler.rs`). That's a real migration, not a
+  patch bump, and not something to do inside an audit pass without dedicated testing against the
+  new API surface. Left open, documented here rather than silently ignored, and worth a follow-up
+  pass on its own.
+
 ## What's explicitly out of scope, and why
 
 No Kubernetes manifests, no Terraform, no HashiCorp Vault, no LLM-backed features, and no live
